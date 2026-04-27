@@ -1,0 +1,1008 @@
+-- ================================================================
+-- ANTI-DUPLICATION / CLEANUP PREVIOUS SCRIPT
+-- ================================================================
+if getgenv().ML_Expert_UI then pcall(function() getgenv().ML_Expert_UI:Destroy() end) end
+if getgenv().ML_Expert_Loops then
+    for _, loop in ipairs(getgenv().ML_Expert_Loops) do pcall(task.cancel, loop) end
+end
+getgenv().ML_Expert_UI = nil
+getgenv().ML_Expert_Loops = {}
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local player = Players.LocalPlayer
+
+----------------------------------------------------------------
+-- FILE SAVE (DISCONNECT & CONFIG)
+----------------------------------------------------------------
+local Config = { SizeValue = "1", RebirthTarget = "0", WalkSpeed = "16", FlySpeed = "50" }
+
+local function SaveConfig()
+    pcall(function() writefile("ML_Expert_Config.json", HttpService:JSONEncode(Config)) end)
+end
+
+pcall(function()
+    if isfile("ML_Expert_Config.json") then
+        local data = HttpService:JSONDecode(readfile("ML_Expert_Config.json"))
+        Config.SizeValue = data.SizeValue or "1"
+        Config.RebirthTarget = data.RebirthTarget or "0"
+        Config.WalkSpeed = data.WalkSpeed or "16"
+        Config.FlySpeed = data.FlySpeed or "50"
+    end
+end)
+
+game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
+    if msg and msg ~= "" then
+        pcall(function() 
+            local timeFormatted = os.date("%H-%M-%S")
+            local dateFormatted = os.date("%d-%m-%Y")
+            local fileName = "DISCONNECTED:" .. timeFormatted .. ", " .. dateFormatted .. ".txt"
+            local logContent = "--- DISCONNECT LOG ---\nTime: " .. os.date("%c") .. "\nFull Reason/Error Code: " .. msg
+            writefile(fileName, logContent) 
+        end)
+    end
+end)
+
+----------------------------------------------------------------
+-- STATE VARIABLES
+----------------------------------------------------------------
+local states = {
+    selectedRock = nil, selectedMethod = nil, autoGlitch = false, autoGlitchTrain = false,
+    glitchStartTime = 0, glitchAccumulated = 0, preGlitchPos = nil, isTransitioning = false,
+    autoLiftNoAnim = false, autoLiftValue = false, autoRebirthTarget = false, autoRebirthInf = false,
+    selectedTool = nil, autoEquip = false, autoClaim = false, autoPunch = false, accelReps = false,
+    fastPunch = false, autoSize = false, godMode = false, lockedPos = nil, lastSafePos = nil,
+    autoWalkSpeed = false, fly = false, flyBody = nil, autoMuscleKing = false,
+    killTargets = {}, whitelist = {}, whitelistFriends = false, killActive = false, killEveryone = false,
+    autoGoodKarma = false, autoEvilKarma = false, statsTarget = nil, trackStats = false,
+    viewing = false, withoutFormatNum = false, autoChest = false, autoFortuneWheel = false,
+    currentPetLabel = nil, currentPetTable = nil, currentAuraLabel = nil, currentAuraTable = nil
+}
+
+local rockCache = {}
+local prevRepSpeed = 5
+local nameMap = {} 
+local toggleHand = false
+local lastStatValues = {}
+local statGains = {}
+local statGainTimes = {}
+
+local rockData = {
+    ["Tiny Rock"] = {req = 0, name = "Tiny Rock", idx = 1},
+    ["Punching Rock"] = {req = 10, name = "Punching Rock", idx = 1},
+    ["Large Rock"] = {req = 100, name = "Large Rock", idx = 1},
+    ["Golden Rock"] = {req = 5000, name = "Golden Rock", idx = 1},
+    ["Frozen Rock"] = {req = 150000, name = "Frozen Rock", idx = 1},
+    ["Mystic Rock"] = {req = 400000, name = "Mystic Rock", idx = 1},
+    ["Inferno Rock"] = {req = 750000, name = "Inferno Rock", idx = 1},
+    ["Legend Rock"] = {req = 1000000, name = "Rock Of Legends", idx = 1},
+    ["Muscle King Rock"] = {req = 5000000, name = "Muscle King Mountain", idx = 1},
+    ["Jungle Rock"] = {req = 10000000, name = "Ancient Jungle Rock", idx = 1}
+}
+
+----------------------------------------------------------------
+-- UTILITIES
+----------------------------------------------------------------
+local function getRockInstance(configName)
+    local data = rockData[configName]
+    if not data then return nil end
+    local folder = workspace:FindFirstChild("machinesFolder")
+    if not folder then return nil end
+    local found = {}
+    for _, v in ipairs(folder:GetChildren()) do
+        if v.Name == data.name then table.insert(found, v) end
+    end
+    return found[data.idx]
+end
+
+local function getPunch()
+    return player.Backpack:FindFirstChild("Punch") or (player.Character and player.Character:FindFirstChild("Punch"))
+end
+
+local function formatNum(n)
+    local num = tonumber(n)
+    if not num then return tostring(n) end
+    if states.withoutFormatNum then return tostring(num) end
+    local function trunc(val) return math.floor(val * 100) / 100 end
+    if num >= 1e18 then return string.format("%.2fQi", trunc(num / 1e18))
+    elseif num >= 1e15 then return string.format("%.2fQa", trunc(num / 1e15))
+    elseif num >= 1e12 then return string.format("%.2fT", trunc(num / 1e12))
+    elseif num >= 1e9 then return string.format("%.2fB", trunc(num / 1e9))
+    elseif num >= 1e6 then return string.format("%.2fM", trunc(num / 1e6))
+    elseif num >= 1e3 then return string.format("%.2fK", trunc(num / 1e3))
+    else return tostring(num) end
+end
+
+local function makeDraggable(gui)
+	local dragging, dragInput, dragStart, startPos
+	gui.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = gui.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	gui.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+local function ServerHop(targetType)
+    local sortOrder = targetType == "Small" and "Asc" or "Desc"
+    local url = "https://games.roproxy.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=" .. sortOrder .. "&limit=100"
+    local success, result = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+    if success and result and result.data then
+        for _, server in ipairs(result.data) do
+            if type(server) == "table" and server.playing and server.maxPlayers and server.id ~= game.JobId then
+                if server.playing > 0 and server.playing < server.maxPlayers then
+                    if targetType == "Small" and server.playing <= 2 then TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, player); return
+                    elseif targetType == "Large" then TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, player); return end
+                end
+            end
+        end
+    end
+end
+
+local function handleGlitchCleanup(method, callback)
+    local p = getPunch()
+    if p and p:FindFirstChild("attackTime") then p.attackTime.Value = 0.35 end
+    if method == "Teleport" then
+        if states.preGlitchPos and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = states.preGlitchPos
+        end
+        if callback then callback() end
+    elseif method == "NonTeleport" then
+        states.isTransitioning = true
+        task.spawn(function()
+            task.wait(1)
+            for rock, data in pairs(rockCache) do
+                if rock and rock.Parent then
+                    rock.Size = data.Size; rock.CanCollide = data.CanCollide; rock.CFrame = data.CFrame
+                end
+            end
+            table.clear(rockCache)
+            states.isTransitioning = false
+            if callback then callback() end
+        end)
+    else
+        if callback then callback() end
+    end
+end
+
+----------------------------------------------------------------
+-- UI FRAMEWORK
+----------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui", player.PlayerGui)
+ScreenGui.Name = "ML_Expert_v5"
+ScreenGui.ResetOnSpawn = false
+getgenv().ML_Expert_UI = ScreenGui
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.fromScale(0.3, 0.3)
+MainFrame.Active = true
+makeDraggable(MainFrame)
+
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+
+local TitleText = Instance.new("TextLabel", TitleBar)
+TitleText.Size = UDim2.new(1, -10, 1, 0)
+TitleText.Position = UDim2.fromOffset(5, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "MUSCLE LEGENDS"
+TitleText.TextColor3 = Color3.new(1, 1, 1)
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+
+if UserInputService.TouchEnabled then
+    MainFrame.Size = UDim2.fromOffset(300, 320)
+    MainFrame.Visible = false
+    local MobileToggle = Instance.new("TextButton", ScreenGui)
+    MobileToggle.Size = UDim2.fromOffset(45, 45)
+    MobileToggle.Position = UDim2.fromScale(0.1, 0.1)
+    MobileToggle.Text = "ML"
+    MobileToggle.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    MobileToggle.TextColor3 = Color3.new(1, 1, 1)
+    makeDraggable(MobileToggle)
+    MobileToggle.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
+else
+    MainFrame.Size = UDim2.fromOffset(550, 500)
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if not gpe and input.KeyCode == Enum.KeyCode.Z then MainFrame.Visible = not MainFrame.Visible end
+    end)
+end
+
+local TabContainer = Instance.new("Frame", MainFrame)
+TabContainer.Size = UDim2.new(1, 0, 0, 30)
+TabContainer.Position = UDim2.fromOffset(0, 30)
+TabContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+
+local frames = {}
+local tabs = {"Auto Farm", "Farm", "Killer", "Stats"}
+
+for i, tName in ipairs(tabs) do
+    local btn = Instance.new("TextButton", TabContainer)
+    btn.Size = UDim2.new(0.25, 0, 1, 0)
+    btn.Position = UDim2.new((i-1)*0.25, 0, 0, 0)
+    btn.Text = tName
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    
+    local f = Instance.new("ScrollingFrame", MainFrame)
+    f.Size = UDim2.new(1, -10, 1, -70)
+    f.Position = UDim2.fromOffset(5, 65)
+    f.BackgroundTransparency = 1
+    f.Visible = (i == 1)
+    f.CanvasSize = UDim2.new(0, 0, 0, 2200)
+    f.ScrollBarThickness = 2
+    
+    local layout = Instance.new("UIListLayout", f)
+    layout.Padding = UDim.new(0, 5)
+    
+    frames[tName] = f
+    btn.MouseButton1Click:Connect(function()
+        for _, other in pairs(frames) do other.Visible = false end
+        f.Visible = true
+    end)
+end
+
+----------------------------------------------------------------
+-- UI COMPONENTS HELPER
+----------------------------------------------------------------
+local SetToggle = {}
+local function createToggle(parent, text, callback)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(1, -10, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.Text = text .. " [OFF]"
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    local state = false
+    
+    SetToggle[btn] = function(newState)
+        state = newState
+        btn.Text = text .. (state and " [ON]" or " [OFF]")
+        btn.BackgroundColor3 = state and Color3.fromRGB(0, 120, 0) or Color3.fromRGB(45, 45, 45)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        local newState = not state
+        if callback(newState) == false then newState = false end 
+        SetToggle[btn](newState)
+    end)
+    return btn
+end
+
+local function createDropdown(parent, text, options, multi, callback, checkStateFunc)
+    local container = Instance.new("Frame", parent)
+    container.Size = UDim2.new(1, -10, 0, 30)
+    container.BackgroundTransparency = 1
+    local header = Instance.new("TextButton", container)
+    header.Size = UDim2.new(1, 0, 0, 30)
+    header.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    header.Text = text .. " v"
+    header.TextColor3 = Color3.new(1, 1, 1)
+    
+    local list = Instance.new("ScrollingFrame", container)
+    list.Position = UDim2.fromOffset(0, 30)
+    list.Visible = false
+    list.ZIndex = 10
+    list.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    list.ScrollBarThickness = 4
+    
+    header.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+        local listHeight = math.min(#options * 25, 150)
+        container.Size = list.Visible and UDim2.new(1, -10, 0, listHeight + 30) or UDim2.new(1, -10, 0, 30)
+        list.Size = UDim2.new(1, 0, 0, listHeight)
+        list.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+    end)
+    
+    local function refresh(newOpts)
+        if newOpts then
+            local isSame = true
+            if #newOpts == #options then
+                for idx, val in ipairs(newOpts) do
+                    if val ~= options[idx] then isSame = false break end
+                end
+            else
+                isSame = false
+            end
+            if isSame and #list:GetChildren() > 0 then return end
+            options = newOpts
+        end
+        for _, v in ipairs(list:GetChildren()) do v:Destroy() end
+        for i, opt in ipairs(options) do
+            local o = Instance.new("TextButton", list)
+            o.Size = UDim2.new(1, 0, 0, 25)
+            o.Position = UDim2.fromOffset(0, (i-1)*25)
+            o.Text = tostring(opt)
+            o.TextColor3 = Color3.new(1, 1, 1)
+            o.ZIndex = 11
+            
+            if multi and checkStateFunc then
+                local isActive = checkStateFunc(opt)
+                o.BackgroundColor3 = isActive and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
+            else
+                o.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            end
+
+            o.MouseButton1Click:Connect(function()
+                if not multi then
+                    header.Text = tostring(opt) .. " v"
+                    list.Visible = false
+                    container.Size = UDim2.new(1, -10, 0, 30)
+                    callback(opt)
+                else
+                    local newState = callback(opt)
+                    o.BackgroundColor3 = newState and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
+                end
+            end)
+        end
+        local listHeight = math.min(#options * 25, 150)
+        if list.Visible then
+            container.Size = UDim2.new(1, -10, 0, listHeight + 30)
+            list.Size = UDim2.new(1, 0, 0, listHeight)
+        end
+        list.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+    end
+    refresh()
+    return { refresh = refresh, setHeaderText = function(txt) header.Text = txt end, header = header }
+end
+
+local lockPosBtn, autoRebirthTargetBtn, autoRebirthInfBtn, trackBtn
+
+----------------------------------------------------------------
+-- TAB 1: AUTO FARM
+----------------------------------------------------------------
+local f1 = frames["Auto Farm"]
+createDropdown(f1, "Select Rock", {"Tiny Rock", "Punching Rock", "Large Rock", "Golden Rock", "Frozen Rock", "Mystic Rock", "Inferno Rock", "Legend Rock", "Muscle King Rock", "Jungle Rock"}, false, function(v) 
+    if states.autoGlitch then handleGlitchCleanup(states.selectedMethod, function() states.selectedRock = v end) else states.selectedRock = v end
+end)
+
+createDropdown(f1, "Select Method", {"Teleport", "NonTeleport"}, false, function(v) 
+    if states.autoGlitch and states.selectedMethod ~= v then
+        handleGlitchCleanup(states.selectedMethod, function()
+            states.selectedMethod = v
+            if v == "Teleport" and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                states.preGlitchPos = player.Character.HumanoidRootPart.CFrame
+            end
+        end)
+    else
+        states.selectedMethod = v 
+    end
+end)
+
+local autoGlitchTrainBtn
+createToggle(f1, "Auto Glitch", function(val)
+    if val then
+        if not states.selectedRock or not states.selectedMethod then return false end
+        local req = rockData[states.selectedRock].req
+        local myDur = player:FindFirstChild("Durability") and player.Durability.Value or 0
+        if myDur < req then return false end
+        if states.selectedMethod == "Teleport" and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            states.preGlitchPos = player.Character.HumanoidRootPart.CFrame
+        end
+        states.autoGlitch = true
+        states.glitchStartTime = os.time()
+        return true
+    else
+        states.autoGlitch = false
+        states.glitchAccumulated = states.glitchAccumulated + (os.time() - states.glitchStartTime)
+        if states.autoGlitchTrain then
+            states.autoGlitchTrain = false
+            if SetToggle[autoGlitchTrainBtn] then SetToggle[autoGlitchTrainBtn](false) end
+        end
+        handleGlitchCleanup(states.selectedMethod)
+        return false
+    end
+end)
+
+local timerLabel = Instance.new("TextLabel", f1)
+timerLabel.Size = UDim2.new(1, -10, 0, 20); timerLabel.BackgroundTransparency = 1; timerLabel.TextColor3 = Color3.fromRGB(200, 200, 200); timerLabel.Text = "Glitch Timer: 00:00:00:00"
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(1) do
+        local total = states.glitchAccumulated
+        if states.autoGlitch then total = total + (os.time() - states.glitchStartTime) end
+        local d, h, m, s = math.floor(total / 86400), math.floor((total % 86400) / 3600), math.floor((total % 3600) / 60), total % 60
+        timerLabel.Text = string.format("Glitch Timer: %02d:%02d:%02d:%02d", d, h, m, s)
+    end
+end))
+
+autoGlitchTrainBtn = createToggle(f1, "Auto Glitch While Training", function(val)
+    if val and not states.autoGlitch then return false end
+    states.autoGlitchTrain = val
+    return val
+end)
+
+local autoLiftNoAnimBtn, autoLiftBtn
+autoLiftNoAnimBtn = createToggle(f1, "Auto Lift (Without Anim)", function(val)
+    states.autoLiftNoAnim = val
+    if val and autoLiftBtn then states.autoLiftValue = false; if player:FindFirstChild("autoLiftEnabled") then player.autoLiftEnabled.Value = false end; if SetToggle[autoLiftBtn] then SetToggle[autoLiftBtn](false) end end
+end)
+autoLiftBtn = createToggle(f1, "Auto Lift", function(val)
+    states.autoLiftValue = val
+    if player:FindFirstChild("autoLiftEnabled") then player.autoLiftEnabled.Value = val end
+    if val and autoLiftNoAnimBtn then states.autoLiftNoAnim = false; if SetToggle[autoLiftNoAnimBtn] then SetToggle[autoLiftNoAnimBtn](false) end end
+end)
+
+local toolDD = createDropdown(f1, "Tool Dropdown", {"NO TOOL FOUND"}, false, function(v) states.selectedTool = v end)
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    local filter = {["Weight"]=1, ["Situps"]=1, ["Pushups"]=1, ["Handstands"]=1}
+    while task.wait(1) do
+        local list = {}
+        for _, t in ipairs(player.Backpack:GetChildren()) do if t:IsA("Tool") and filter[t.Name] then table.insert(list, t.Name) end end
+        if player.Character then for _, t in ipairs(player.Character:GetChildren()) do if t:IsA("Tool") and filter[t.Name] then table.insert(list, t.Name) end end end
+        if #list == 0 then toolDD.refresh({"NO TOOL FOUND"}) else toolDD.refresh(list) end
+    end
+end))
+
+createToggle(f1, "Auto Equip Tool", function(v) if v and (not states.selectedTool or states.selectedTool == "NO TOOL FOUND") then return false end; states.autoEquip = v end)
+
+local rebBox = Instance.new("TextBox", f1)
+rebBox.Size = UDim2.new(1, -10, 0, 30); rebBox.Text = Config.RebirthTarget; rebBox.PlaceholderText = "Rebirth Target"; rebBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40); rebBox.TextColor3 = Color3.new(1, 1, 1)
+rebBox.FocusLost:Connect(function() Config.RebirthTarget = rebBox.Text; SaveConfig() end)
+
+autoRebirthTargetBtn = createToggle(f1, "Auto Rebirth Target", function(v)
+    states.autoRebirthTarget = v 
+    if v and states.autoRebirthInf then states.autoRebirthInf = false; if SetToggle[autoRebirthInfBtn] then SetToggle[autoRebirthInfBtn](false) end end
+end)
+autoRebirthInfBtn = createToggle(f1, "Auto Rebirth Inf", function(v) 
+    states.autoRebirthInf = v 
+    if v and states.autoRebirthTarget then states.autoRebirthTarget = false; if SetToggle[autoRebirthTargetBtn] then SetToggle[autoRebirthTargetBtn](false) end end
+end)
+
+createToggle(f1, "Auto Muscle King", function(val) states.autoMuscleKing = val; if val then states.lockedPos = nil; if lockPosBtn and SetToggle[lockPosBtn] then SetToggle[lockPosBtn](false) end end; return val end)
+createToggle(f1, "Auto Claim Gift", function(v) states.autoClaim = v end)
+createToggle(f1, "Auto Open Chest", function(v) states.autoChest = v end)
+createToggle(f1, "Auto Punch", function(v) states.autoPunch = v end)
+createToggle(f1, "Auto Fortune Wheel", function(v) states.autoFortuneWheel = v end)
+createToggle(f1, "Accelerate Rep Speed", function(val)
+    states.accelReps = val
+    local ult = player:FindFirstChild("ultimatesFolder") and player.ultimatesFolder:FindFirstChild("+5% Rep Speed")
+    if ult then if val then prevRepSpeed = ult.Value; ult.Value = 1000 else ult.Value = prevRepSpeed end end
+end)
+createToggle(f1, "Fast Punch", function(val) states.fastPunch = val; local p = getPunch(); if p and p:FindFirstChild("attackTime") then p.attackTime.Value = val and 0 or 0.35 end end)
+
+----------------------------------------------------------------
+-- TAB 2: FARM
+----------------------------------------------------------------
+local f2 = frames["Farm"]
+local sizeBox = Instance.new("TextBox", f2)
+sizeBox.Size = UDim2.new(1, -10, 0, 30); sizeBox.Text = Config.SizeValue; sizeBox.PlaceholderText = "Size Value"; sizeBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40); sizeBox.TextColor3 = Color3.new(1, 1, 1)
+sizeBox:GetPropertyChangedSignal("Text"):Connect(function() sizeBox.Text = sizeBox.Text:gsub("%D", "") end)
+sizeBox.FocusLost:Connect(function() local num = tonumber(sizeBox.Text); if not num or num < 1 then sizeBox.Text = "1" elseif num > 100 then sizeBox.Text = "100" else sizeBox.Text = tostring(math.floor(num)) end; Config.SizeValue = sizeBox.Text; SaveConfig() end)
+
+createToggle(f2, "Auto Size Toggle", function(v) states.autoSize = v end)
+
+local wsBox = Instance.new("TextBox", f2)
+wsBox.Size = UDim2.new(1, -10, 0, 30); wsBox.Text = Config.WalkSpeed or "16"; wsBox.PlaceholderText = "WalkSpeed"; wsBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40); wsBox.TextColor3 = Color3.new(1, 1, 1)
+wsBox:GetPropertyChangedSignal("Text"):Connect(function() wsBox.Text = wsBox.Text:gsub("%D", "") end)
+wsBox.FocusLost:Connect(function() local num = tonumber(wsBox.Text); if not num or num < 1 then wsBox.Text = "16" else wsBox.Text = tostring(math.floor(num)) end; Config.WalkSpeed = wsBox.Text; SaveConfig() end)
+
+createToggle(f2, "Auto WalkSpeed", function(v) states.autoWalkSpeed = v end)
+
+local flySpeedBox = Instance.new("TextBox", f2)
+flySpeedBox.Size = UDim2.new(1, -10, 0, 30); flySpeedBox.Text = Config.FlySpeed or "50"; flySpeedBox.PlaceholderText = "Fly Speed"; flySpeedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40); flySpeedBox.TextColor3 = Color3.new(1, 1, 1)
+flySpeedBox:GetPropertyChangedSignal("Text"):Connect(function() flySpeedBox.Text = flySpeedBox.Text:gsub("%D", "") end)
+flySpeedBox.FocusLost:Connect(function() Config.FlySpeed = flySpeedBox.Text; SaveConfig() end)
+
+createToggle(f2, "Fly", function(v) 
+    states.fly = v 
+    if not v and states.flyBody then 
+        if states.flyBody.Velocity.Parent then states.flyBody.Velocity:Destroy() end
+        if states.flyBody.Gyro.Parent then states.flyBody.Gyro:Destroy() end
+        states.flyBody = nil
+    end
+    if not v and player.Character and player.Character:FindFirstChild("Humanoid") then player.Character.Humanoid.PlatformStand = false end
+end)
+
+local godModeBtn = createToggle(f2, "God Mode", function(v) 
+    states.godMode = v 
+end)
+
+local copyPosBtn = Instance.new("TextButton", f2)
+copyPosBtn.Size = UDim2.new(1, -10, 0, 35); copyPosBtn.Text = "Copy My Position"; copyPosBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 60); copyPosBtn.TextColor3 = Color3.new(1, 1, 1)
+copyPosBtn.MouseButton1Click:Connect(function() if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then local pos = player.Character.HumanoidRootPart.Position; pcall(function() setclipboard(string.format("%f, %f, %f", pos.X, pos.Y, pos.Z)) end) end end)
+
+local snackBtn = Instance.new("TextButton", f2)
+snackBtn.Size = UDim2.new(1, -10, 0, 35); snackBtn.Text = "Eat All Snacks"; snackBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40); snackBtn.TextColor3 = Color3.new(1, 1, 1)
+snackBtn.MouseButton1Click:Connect(function()
+    local skip = {Weight=1, Punch=1, ["Ground Slam"]=1, Stomp=1, Handstands=1, Situps=1, Pushups=1}; local char = player.Character; if not char then return end; local snacksToEat = {}; for _, t in ipairs(player.Backpack:GetChildren()) do if t:IsA("Tool") and not skip[t.Name] then table.insert(snacksToEat, t) end end; for _, t in ipairs(snacksToEat) do t.Parent = char; t:Activate() end; task.wait(); for _, t in ipairs(snacksToEat) do t.Parent = player.Backpack end
+end)
+
+lockPosBtn = createToggle(f2, "Lock Position", function(val) if states.autoMuscleKing and val then return false end; if val and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then states.lockedPos = player.Character.HumanoidRootPart.CFrame else states.lockedPos = nil end; return val end)
+local smallHopBtn = Instance.new("TextButton", f2); smallHopBtn.Size = UDim2.new(1, -10, 0, 35); smallHopBtn.Text = "Small Server Hop"; smallHopBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 60); smallHopBtn.TextColor3 = Color3.new(1, 1, 1); smallHopBtn.MouseButton1Click:Connect(function() ServerHop("Small") end)
+local largeHopBtn = Instance.new("TextButton", f2); largeHopBtn.Size = UDim2.new(1, -10, 0, 35); largeHopBtn.Text = "Large Server Hop"; largeHopBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40); largeHopBtn.TextColor3 = Color3.new(1, 1, 1); largeHopBtn.MouseButton1Click:Connect(function() ServerHop("Large") end)
+
+----------------------------------------------------------------
+-- TAB 3: KILLER
+----------------------------------------------------------------
+local f3 = frames["Killer"]
+local pKillDD = createDropdown(f3, "Player Dropdown", {}, true, function(label) local realName = nameMap[label] or label; if states.killTargets[realName] then states.killTargets[realName] = nil; return false else states.killTargets[realName] = true; return true end end, function(label) local r = nameMap[label] or label; return states.killTargets[r] end)
+local whiteDD = createDropdown(f3, "Whitelist Dropdown", {}, true, function(label) local realName = nameMap[label] or label; if states.whitelist[realName] then states.whitelist[realName] = nil; return false else states.whitelist[realName] = true; return true end end, function(label) local r = nameMap[label] or label; return states.whitelist[r] end)
+
+createToggle(f3, "Whitelist Friends", function(val) states.whitelistFriends = val; for _, p in ipairs(Players:GetPlayers()) do if p ~= player and player:IsFriendsWith(p.UserId) then if val then states.whitelist[p.Name] = true else states.whitelist[p.Name] = nil end end end end)
+createToggle(f3, "Kill", function(v) states.killActive = v end)
+createToggle(f3, "Kill Everyone", function(v) states.killEveryone = v end)
+createToggle(f3, "Auto Good Karma", function(v) states.autoGoodKarma = v end)
+createToggle(f3, "Auto Evil Karma", function(v) states.autoEvilKarma = v end)
+
+----------------------------------------------------------------
+-- TAB 4: REWORKED STATS & INVENTORY
+----------------------------------------------------------------
+local f4 = frames["Stats"]
+local statsPlayerDD
+local basicDD, advDD, rareDD, epicDD, uniqueDD
+local auraBasicDD, auraAdvDD, auraRareDD, auraEpicDD, auraUniqueDD
+local petDetails, auraDetails
+
+local function processSpecificFolderItems(folder)
+    if not folder then return {"Nothing Here"}, {} end; 
+    local counts, itemRefs, found = {}, {}, false; 
+    local options = {}; 
+    for _, item in ipairs(folder:GetChildren()) do 
+        found = true; 
+        local baseName = item.Name
+        counts[baseName] = (counts[baseName] or 0) + 1; 
+        local displayName = baseName .. " #" .. counts[baseName]
+        table.insert(options, displayName)
+        itemRefs[displayName] = item 
+    end; 
+    if not found then return {"Nothing Here"}, {} end; 
+    return options, itemRefs
+end
+
+local function handleItemSelection(label, refTable, detailLabel)
+    if not label or label == "Nothing Here" then return end; 
+    local item = refTable[label] 
+    if item then
+        local isEvolved = false
+        local evObj = item:FindFirstChild("Evolved") or item:FindFirstChild("evolved")
+        if evObj and evObj:IsA("BoolValue") then isEvolved = evObj.Value end
+
+        local txt = "Evolved: " .. tostring(isEvolved) .. "\nXP: " .. formatNum(item:FindFirstChild("exp") and item.exp.Value or 0) .. "\nLevel: " .. formatNum(item:FindFirstChild("level") and item.level.Value or 1) .. "\nRequires Rebirth: " .. formatNum(item:FindFirstChild("requiredRebirths") and item.requiredRebirths.Value or 0) .. "\n\nPerks:\n"; local perks = item:FindFirstChild("perksFolder")
+        for _, pName in ipairs({"strength", "durability", "agility", "damage"}) do local fv = "Not Found"; if perks then local pObj = perks:FindFirstChild(pName); if pObj then fv = formatNum(pObj:IsA("ValueBase") and pObj.Value or (pObj:FindFirstChild("Value") and pObj.Value.Value)) end end; txt = txt .. pName:sub(1,1):upper() .. pName:sub(2) .. ": " .. fv .. "\n" end; detailLabel.Text = txt
+    end
+end
+
+local function processAuraItems(folder)
+    if not folder then return {"Nothing Here"}, {} end; local counts, itemRefs, found = {}, {}, false; local options = {}; for _, item in ipairs(folder:GetChildren()) do found = true; local baseName = item.Name; counts[baseName] = (counts[baseName] or 0) + 1; local displayName = baseName .. " #" .. counts[baseName]; table.insert(options, displayName); itemRefs[displayName] = item end; if not found then return {"Nothing Here"}, {} end; return options, itemRefs
+end
+
+local function handleAuraSelection(label, refTable, detailLabel)
+    if not label or label == "Nothing Here" then return end; local item = refTable[label]
+    if item then
+        local isEvolved = false
+        local evObj = item:FindFirstChild("Evolved") or item:FindFirstChild("evolved")
+        if evObj and evObj:IsA("BoolValue") then isEvolved = evObj.Value end
+
+        local txt = "Evolved: " .. tostring(isEvolved) .. "\nXP: " .. formatNum(item:FindFirstChild("exp") and item.exp.Value or 0) .. "\nLevel: " .. formatNum(item:FindFirstChild("level") and item.level.Value or 1) .. "\n\nPerks:\n"; local perks = item:FindFirstChild("perksFolder")
+        for _, pName in ipairs({"strength", "durability", "agility", "damage"}) do local fv = "Not Found"; if perks then local pObj = perks:FindFirstChild(pName); if pObj then fv = formatNum(pObj:IsA("ValueBase") and pObj.Value or (pObj:FindFirstChild("Value") and pObj.Value.Value)) end end; txt = txt .. pName:sub(1,1):upper() .. pName:sub(2) .. ": " .. fv .. "\n" end; detailLabel.Text = txt
+    end
+end
+
+local function clearPetAuraUI()
+    states.currentPetLabel = nil; states.currentPetTable = nil
+    states.currentAuraLabel = nil; states.currentAuraTable = nil
+    if petDetails then petDetails.Text = "Select a Pet to view stats" end
+    if auraDetails then auraDetails.Text = "Select an Aura to view stats" end
+    
+    if basicDD then basicDD.refresh({"Nothing Here"}); basicDD.setHeaderText("Basic Pets v") end
+    if advDD then advDD.refresh({"Nothing Here"}); advDD.setHeaderText("Advance Pets v") end
+    if rareDD then rareDD.refresh({"Nothing Here"}); rareDD.setHeaderText("Rare Pets v") end
+    if epicDD then epicDD.refresh({"Nothing Here"}); epicDD.setHeaderText("Epic Pets v") end
+    if uniqueDD then uniqueDD.refresh({"Nothing Here"}); uniqueDD.setHeaderText("Unique Pets v") end
+
+    if auraBasicDD then auraBasicDD.refresh({"Nothing Here"}); auraBasicDD.setHeaderText("Basic Auras v") end
+    if auraAdvDD then auraAdvDD.refresh({"Nothing Here"}); auraAdvDD.setHeaderText("Advance Auras v") end
+    if auraRareDD then auraRareDD.refresh({"Nothing Here"}); auraRareDD.setHeaderText("Rare Auras v") end
+    if auraEpicDD then auraEpicDD.refresh({"Nothing Here"}); auraEpicDD.setHeaderText("Epic Auras v") end
+    if auraUniqueDD then auraUniqueDD.refresh({"Nothing Here"}); auraUniqueDD.setHeaderText("Unique Auras v") end
+end
+
+local function resetStatsUI()
+    states.trackStats = false; states.statsTarget = nil; lastStatValues = {}; statGains = {}; statGainTimes = {}
+    if statsPlayerDD then statsPlayerDD.setHeaderText("Player Dropdown v") end
+    if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end
+    clearPetAuraUI()
+end
+
+local petRefsBasic, petRefsAdv, petRefsRare, petRefsEpic, petRefsUnique = {}, {}, {}, {}, {}
+local auraRefsBasic, auraRefsAdv, auraRefsRare, auraRefsEpic, auraRefsUnique = {}, {}, {}, {}, {}
+
+statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label) 
+    local newTarget = nameMap[label] or label
+    if states.statsTarget ~= newTarget then 
+        states.statsTarget = newTarget
+        lastStatValues = {}; statGains = {}; statGainTimes = {}
+        statsPlayerDD.setHeaderText(label .. " v")
+        states.trackStats = false
+        if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end 
+        clearPetAuraUI()
+        
+        -- Populate static Pet and Aura list strictly ONCE on selection
+        local tp = Players:FindFirstChild(newTarget)
+        if tp then
+            local petsF = tp:FindFirstChild("petsFolder")
+            local oB, rB = processSpecificFolderItems(petsF and petsF:FindFirstChild("Basic")); petRefsBasic = rB; basicDD.refresh(oB)
+            local oA, rA = processSpecificFolderItems(petsF and petsF:FindFirstChild("Advanced")); petRefsAdv = rA; advDD.refresh(oA)
+            local oR, rR = processSpecificFolderItems(petsF and petsF:FindFirstChild("Rare")); petRefsRare = rR; rareDD.refresh(oR)
+            local oE, rE = processSpecificFolderItems(petsF and petsF:FindFirstChild("Epic")); petRefsEpic = rE; epicDD.refresh(oE)
+            local oU, rU = processSpecificFolderItems(petsF and petsF:FindFirstChild("Unique")); petRefsUnique = rU; uniqueDD.refresh(oU)
+            
+            local powerUpsF = tp:FindFirstChild("powerUpsFolder")
+            local oAB, rAB = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Basic")); auraRefsBasic = rAB; auraBasicDD.refresh(oAB)
+            local oAA, rAA = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Advanced")); auraRefsAdv = rAA; auraAdvDD.refresh(oAA)
+            local oAR, rAR = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Rare")); auraRefsRare = rAR; auraRareDD.refresh(oAR)
+            local oAE, rAE = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Epic")); auraRefsEpic = rAE; auraEpicDD.refresh(oAE)
+            local oAU, rAU = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Unique")); auraRefsUnique = rAU; auraUniqueDD.refresh(oAU)
+        end
+    end 
+end)
+
+Players.PlayerRemoving:Connect(function(plr) if states.statsTarget == plr.Name then resetStatsUI() end end)
+
+trackBtn = Instance.new("TextButton", f4)
+trackBtn.Size = UDim2.new(1, -10, 0, 30); trackBtn.Text = "Track Stats"; trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50); trackBtn.TextColor3 = Color3.new(1, 1, 1)
+trackBtn.MouseButton1Click:Connect(function() if states.statsTarget then states.trackStats = true; trackBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 150) end end)
+
+createToggle(f4, "Without Format Number", function(v) states.withoutFormatNum = v end)
+
+local tpToPlayerBtn = Instance.new("TextButton", f4)
+tpToPlayerBtn.Size = UDim2.new(1, -10, 0, 30); tpToPlayerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60); tpToPlayerBtn.Text = "Teleport Player"; tpToPlayerBtn.TextColor3 = Color3.new(1, 1, 1)
+tpToPlayerBtn.MouseButton1Click:Connect(function() if states.statsTarget then local tp = Players:FindFirstChild(states.statsTarget); if tp and tp.Character and tp.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = tp.Character.HumanoidRootPart.CFrame end end end)
+
+local statNamesList = {"Strength", "Durability", "Agility", "Rebirth", "Rebirth Multiplier", "Brawl", "Kill", "Gems", "Brawl Kill", "Size", "Speed", "Good Karma", "Evil Karma", "Auto Lift", "Muscle King Time", "Save Size", "Save Speed", "Current Map"}
+local statsDisp = {}
+for _, s in ipairs(statNamesList) do local l = Instance.new("TextLabel", f4); l.Size = UDim2.new(1, -10, 0, 20); l.Text = s .. ": None"; l.BackgroundTransparency = 1; l.TextColor3 = Color3.new(1, 1, 1); l.TextXAlignment = Enum.TextXAlignment.Left; statsDisp[s] = l end
+
+createToggle(f4, "View Player", function(val) states.viewing = val; if not val and player.Character and player.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character.Humanoid end end)
+
+local invHeader = Instance.new("TextLabel", f4); invHeader.Size = UDim2.new(1, -10, 0, 25); invHeader.Text = "--- PETS ---"; invHeader.BackgroundTransparency = 1; invHeader.TextColor3 = Color3.fromRGB(200, 200, 0); invHeader.Font = Enum.Font.SourceSansBold; invHeader.TextSize = 18
+
+petDetails = Instance.new("TextLabel", f4); petDetails.Size = UDim2.new(1, -10, 0, 140); petDetails.BackgroundTransparency = 1; petDetails.TextColor3 = Color3.new(1, 1, 1); petDetails.TextXAlignment = Enum.TextXAlignment.Left; petDetails.TextYAlignment = Enum.TextYAlignment.Top; petDetails.Text = "Select a Pet to view stats"
+
+basicDD = createDropdown(f4, "Basic Pets", {"Nothing Here"}, false, function(l) states.currentPetLabel = l; states.currentPetTable = "Basic"; handleItemSelection(l, petRefsBasic, petDetails) end)
+advDD = createDropdown(f4, "Advance Pets", {"Nothing Here"}, false, function(l) states.currentPetLabel = l; states.currentPetTable = "Advanced"; handleItemSelection(l, petRefsAdv, petDetails) end)
+rareDD = createDropdown(f4, "Rare Pets", {"Nothing Here"}, false, function(l) states.currentPetLabel = l; states.currentPetTable = "Rare"; handleItemSelection(l, petRefsRare, petDetails) end)
+epicDD = createDropdown(f4, "Epic Pets", {"Nothing Here"}, false, function(l) states.currentPetLabel = l; states.currentPetTable = "Epic"; handleItemSelection(l, petRefsEpic, petDetails) end)
+uniqueDD = createDropdown(f4, "Unique Pets", {"Nothing Here"}, false, function(l) states.currentPetLabel = l; states.currentPetTable = "Unique"; handleItemSelection(l, petRefsUnique, petDetails) end)
+
+local auraHeader = Instance.new("TextLabel", f4); auraHeader.Size = UDim2.new(1, -10, 0, 25); auraHeader.Text = "--- AURAS ---"; auraHeader.BackgroundTransparency = 1; auraHeader.TextColor3 = Color3.fromRGB(200, 0, 200); auraHeader.Font = Enum.Font.SourceSansBold; auraHeader.TextSize = 18
+
+auraDetails = Instance.new("TextLabel", f4); auraDetails.Size = UDim2.new(1, -10, 0, 140); auraDetails.BackgroundTransparency = 1; auraDetails.TextColor3 = Color3.new(1, 1, 1); auraDetails.TextXAlignment = Enum.TextXAlignment.Left; auraDetails.TextYAlignment = Enum.TextYAlignment.Top; auraDetails.Text = "Select an Aura to view stats"
+
+auraBasicDD = createDropdown(f4, "Basic Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Basic"; handleAuraSelection(l, auraRefsBasic, auraDetails) end)
+auraAdvDD = createDropdown(f4, "Advance Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Advanced"; handleAuraSelection(l, auraRefsAdv, auraDetails) end)
+auraRareDD = createDropdown(f4, "Rare Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Rare"; handleAuraSelection(l, auraRefsRare, auraDetails) end)
+auraEpicDD = createDropdown(f4, "Epic Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Epic"; handleAuraSelection(l, auraRefsEpic, auraDetails) end)
+auraUniqueDD = createDropdown(f4, "Unique Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Unique"; handleAuraSelection(l, auraRefsUnique, auraDetails) end)
+
+local ultHeader = Instance.new("TextLabel", f4); ultHeader.Size = UDim2.new(1, -10, 0, 20); ultHeader.Text = "--- ULTIMATES ---"; ultHeader.BackgroundTransparency = 1; ultHeader.TextColor3 = Color3.fromRGB(0, 200, 200); ultHeader.Font = Enum.Font.SourceSansBold; ultHeader.TextXAlignment = Enum.TextXAlignment.Left
+local ultList = Instance.new("TextLabel", f4); ultList.Size = UDim2.new(1, -10, 0, 60); ultList.BackgroundTransparency = 1; ultList.TextColor3 = Color3.new(1, 1, 1); ultList.TextXAlignment = Enum.TextXAlignment.Left; ultList.TextYAlignment = Enum.TextYAlignment.Top; ultList.Text = "None"
+
+local gpHeader = Instance.new("TextLabel", f4); gpHeader.Size = UDim2.new(1, -10, 0, 20); gpHeader.Text = "--- GAMEPASSES ---"; gpHeader.BackgroundTransparency = 1; gpHeader.TextColor3 = Color3.fromRGB(0, 200, 100); gpHeader.Font = Enum.Font.SourceSansBold; gpHeader.TextXAlignment = Enum.TextXAlignment.Left
+local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0, 100); gpList.BackgroundTransparency = 1; gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlignment.Left; gpList.TextYAlignment = Enum.TextYAlignment.Top; gpList.Text = "None"
+
+----------------------------------------------------------------
+-- MAIN LOOPS
+----------------------------------------------------------------
+table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
+    local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
+        local root = char.HumanoidRootPart
+        if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
+        elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait() do
+        if states.godMode then ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end
+        if states.autoSize then ReplicatedStorage.rEvents.changeSpeedSizeRemote:InvokeServer("changeSize", tonumber(Config.SizeValue) or 1) end
+        local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+            local root, hum = char.HumanoidRootPart, char.Humanoid
+            if states.autoWalkSpeed then hum.WalkSpeed = tonumber(Config.WalkSpeed) or 16 end
+            if states.fly then
+                hum.PlatformStand = true
+                if not states.flyBody or not states.flyBody.Velocity.Parent then
+                    states.flyBody = {}; local bv = Instance.new("BodyVelocity", root); bv.MaxForce, bv.Velocity = Vector3.new(math.huge, math.huge, math.huge), Vector3.zero
+                    local bg = Instance.new("BodyGyro", root); bg.MaxTorque, bg.CFrame = Vector3.new(math.huge, math.huge, math.huge), root.CFrame
+                    states.flyBody.Velocity, states.flyBody.Gyro = bv, bg
+                end
+                local speed, cam = tonumber(Config.FlySpeed) or 50, workspace.CurrentCamera
+                if states.flyBody.Gyro.Parent and states.flyBody.Velocity.Parent then
+                    states.flyBody.Gyro.CFrame = cam.CFrame
+                    local moveVec = Vector3.new()
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up) then moveVec = moveVec + Vector3.new(0, 0, -1) end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) then moveVec = moveVec + Vector3.new(0, 0, 1) end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left) then moveVec = moveVec + Vector3.new(-1, 0, 0) end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right) then moveVec = moveVec + Vector3.new(1, 0, 0) end
+                    
+                    if moveVec.Magnitude == 0 then
+                        pcall(function()
+                            local controlModule = require(player.PlayerScripts:WaitForChild("PlayerModule"):WaitForChild("ControlModule"))
+                            moveVec = controlModule:GetMoveVector()
+                        end)
+                    end
+
+                    if moveVec and moveVec.Magnitude > 0 then
+                        states.flyBody.Velocity.Velocity = (cam.CFrame.RightVector * moveVec.X + cam.CFrame.LookVector * -moveVec.Z) * speed
+                    else
+                        states.flyBody.Velocity.Velocity = Vector3.zero
+                    end
+                end
+            end
+            if not states.autoMuscleKing and not states.lockedPos then if states.godMode then if states.lastSafePos and (root.Position - states.lastSafePos.Position).Magnitude > 150 then root.CFrame = states.lastSafePos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero else states.lastSafePos = root.CFrame end else states.lastSafePos = root.CFrame end end
+        end
+        if states.autoEquip and states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" and char then
+            local hum, equippedTool, targetTool = char:FindFirstChild("Humanoid"), char:FindFirstChildOfClass("Tool"), player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
+            if targetTool then if equippedTool and equippedTool ~= targetTool then if hum then hum:UnequipTools() end end; if not char:FindFirstChild(states.selectedTool) then if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end end
+            else local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight"); if weightTool and equippedTool ~= weightTool then if hum and equippedTool then hum:UnequipTools() end; if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end end end
+        end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    local allowedTools = {["Punch"]=true, ["Weight"]=true, ["Stomp"]=true, ["Ground Slam"]=true, ["Pushups"]=true, ["Handstands"]=true, ["Situps"]=true}
+    while task.wait(0.5) do local char = player.Character; if char then for _, t in ipairs(char:GetChildren()) do if t:IsA("Tool") then t.CanBeDropped = false; if not allowedTools[t.Name] then t.Parent = player.Backpack end end end end; for _, t in ipairs(player.Backpack:GetChildren()) do if t:IsA("Tool") then t.CanBeDropped = false end end end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait() do
+        local char = player.Character; if not char then continue end; local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
+        if root and hum and hum.Health > 0 then
+            if states.autoGlitch and states.selectedRock and states.selectedMethod and not states.isTransitioning then
+                local rockModel = getRockInstance(states.selectedRock); if rockModel then
+                    local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart"); if actualRockPart then
+                        local punch = getPunch()
+                        if states.selectedMethod == "Teleport" then 
+                            if punch and punch:FindFirstChild("attackTime") then punch.attackTime.Value = 0.05 end
+                            local edgeOffset = (actualRockPart.Size.Magnitude / 2) + (char:GetExtentsSize().Magnitude / 2) + 1.5 + ((tonumber(Config.SizeValue) or 1) * 0.4)
+                            root.CFrame = CFrame.lookAt((actualRockPart.CFrame * CFrame.new(0, 0, edgeOffset)).Position, actualRockPart.Position)
+                        elseif states.selectedMethod == "NonTeleport" then 
+                            local handName = toggleHand and "Left" or "Right"
+                            local targetHand = char:FindFirstChild(handName .. "Hand") or char:FindFirstChild(handName .. " Arm")
+                            if not targetHand then targetHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") end
+                            toggleHand = not toggleHand
+                            
+                            if targetHand then 
+                                if not rockCache[actualRockPart] then 
+                                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame} 
+                                end
+                                actualRockPart.Size = Vector3.new(3, 3, 3)
+                                actualRockPart.CanCollide = false
+                                actualRockPart.CFrame = targetHand.CFrame
+                            end
+                        end
+                        if states.autoGlitchTrain then 
+                            local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
+                            for _, tool in ipairs(char:GetChildren()) do 
+                                if tool:IsA("Tool") and allowed[tool.Name] then tool:Activate() end 
+                            end
+                            player.muscleEvent:FireServer("punch", "leftHand")
+                            player.muscleEvent:FireServer("punch", "rightHand")
+                        else 
+                            for _, tool in ipairs(char:GetChildren()) do 
+                                if tool:IsA("Tool") and tool.Name ~= "Punch" then tool.Parent = player.Backpack end 
+                            end
+                            
+                            local punchTool = player.Backpack:FindFirstChild("Punch") or char:FindFirstChild("Punch")
+                            if punchTool and not char:FindFirstChild("Punch") then
+                                if hum then hum:EquipTool(punchTool) end
+                            end
+
+                            player.muscleEvent:FireServer("punch", "leftHand")
+                            player.muscleEvent:FireServer("punch", "rightHand")
+                        end
+                    end
+                end
+            end
+            local anyKillActive, hand = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma, char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+            if anyKillActive and hand then for _, p in ipairs(Players:GetPlayers()) do if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local shouldKill = false; if states.killEveryone and not states.whitelist[p.Name] then shouldKill = true elseif states.killActive and states.killTargets[p.Name] then shouldKill = true elseif states.autoGoodKarma and (p:FindFirstChild("evilKarma") and p.evilKarma.Value > (p:FindFirstChild("goodKarma") and p.goodKarma.Value or 0)) then shouldKill = true elseif states.autoEvilKarma and (p:FindFirstChild("goodKarma") and p.goodKarma.Value > (p:FindFirstChild("evilKarma") and p.evilKarma.Value or 0)) then shouldKill = true end
+                if shouldKill and not states.whitelist[p.Name] then 
+                    p.Character.HumanoidRootPart.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
+                    p.Character.HumanoidRootPart.AssemblyLinearVelocity, p.Character.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+                    player.muscleEvent:FireServer("punch", "leftHand")
+                    player.muscleEvent:FireServer("punch", "rightHand")
+                end
+            end end end
+        end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(1) do
+        if states.autoChest then
+            local char = player.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if obj.Name:lower():find("chest") then
+                        local ci = obj:FindFirstChild("circleInner")
+                        local csp = obj:FindFirstChild("circleSignPart")
+                        if ci and csp then
+                            local gui = csp:FindFirstChild("signGui")
+                            local tl = gui and gui:FindFirstChild("timeLabel")
+                            local ti = ci:FindFirstChildWhichIsA("TouchTransmitter") or ci:FindFirstChild("TouchInterest")
+                            if tl and ti then
+                                if tl.Text == "Ready To Collect" then
+                                    if firetouchtransmitter then
+                                        firetouchtransmitter(ci, root, 0)
+                                        task.wait(0.05)
+                                        firetouchtransmitter(ci, root, 1)
+                                    else
+                                        local oldPos = root.CFrame
+                                        root.CFrame = ci.CFrame
+                                        task.wait(0.2)
+                                        root.CFrame = oldPos
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function() while task.wait() do if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end end end))
+
+-- SEPARATED 1 SECOND LOOP FOR AUTO CLAIM GIFT
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(1) do
+        if states.autoClaim then
+            for i=1,8 do
+                pcall(function()
+                    ReplicatedStorage.rEvents.freeGiftClaimRemote:InvokeServer("claimGift", i)
+                end)
+            end
+        end
+    end
+end))
+
+-- SEPARATED 1 SECOND LOOP FOR AUTO FORTUNE WHEEL
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(1) do
+        if states.autoFortuneWheel then
+            pcall(function()
+                local args = {
+                    [1] = "openFortuneWheel",
+                    [2] = game:GetService("ReplicatedStorage").fortuneWheelChances:FindFirstChild("Fortune Wheel"),
+                }
+                game:GetService("ReplicatedStorage").rEvents.openFortuneWheelRemote:InvokeServer(unpack(args))
+            end)
+        end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait() do
+        if states.autoRebirthInf then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end
+        if states.autoRebirthTarget then local target = tonumber(Config.RebirthTarget) or 0; if player.leaderstats.Rebirths.Value < target then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") else states.autoRebirthTarget = false; if SetToggle[autoRebirthTargetBtn] then SetToggle[autoRebirthTargetBtn](false) end end end
+        if states.viewing and states.statsTarget then local tp = Players:FindFirstChild(states.statsTarget); if tp and tp.Character and tp.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = tp.Character.Humanoid end elseif not states.viewing and player.Character and player.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character.Humanoid end
+        
+        if states.trackStats and states.statsTarget then
+            local tp = Players:FindFirstChild(states.statsTarget)
+            if tp then
+                local ls = tp:FindFirstChild("leaderstats")
+                for s, label in pairs(statsDisp) do 
+                    local rawVal, isBool = 0, false
+                    if s == "Size" then rawVal = tp:FindFirstChild("customSize") and tp.customSize.Value or 1 
+                    elseif s == "Speed" then rawVal = tp:FindFirstChild("customSpeed") and tp.customSpeed.Value or (tp.Character and tp.Character:FindFirstChild("Humanoid") and tp.Character.Humanoid.WalkSpeed or 16)
+                    elseif s == "Kill" then rawVal = ls and ls:FindFirstChild("Kills") and ls.Kills.Value or 0
+                    elseif s == "Brawl" then rawVal = ls and ls:FindFirstChild("Brawls") and ls.Brawls.Value or 0
+                    elseif s == "Brawl Kill" then rawVal = tp:FindFirstChild("brawlKills") and tp.brawlKills.Value or 0 
+                    elseif s == "Evil Karma" then rawVal = tp:FindFirstChild("evilKarma") and tp.evilKarma.Value or 0 
+                    elseif s == "Good Karma" then rawVal = tp:FindFirstChild("goodKarma") and tp.goodKarma.Value or 0 
+                    elseif s == "Muscle King Time" then rawVal = tp:FindFirstChild("muscleKingTime") and tp.muscleKingTime.Value or 0 
+                    elseif s == "Rebirth Multiplier" then rawVal = tp:FindFirstChild("rebirthMultiplier") and tp.rebirthMultiplier.Value or 0 
+                    elseif s == "Auto Lift" then rawVal = tp:FindFirstChild("autoLiftEnabled") and tp.autoLiftEnabled.Value or false; isBool = true 
+                    elseif s == "Save Size" then rawVal = tp:FindFirstChild("saveSizePlayerValue") and tp.saveSizePlayerValue.Value or false; isBool = true 
+                    elseif s == "Save Speed" then rawVal = tp:FindFirstChild("saveSpeedPlayerValue") and tp.saveSpeedPlayerValue.Value or false; isBool = true 
+                    elseif s == "Current Map" then rawVal = tp:FindFirstChild("currentMap") and tp.currentMap.Value or "None"; isBool = true 
+                    elseif s == "Rebirth" then rawVal = ls and ls:FindFirstChild("Rebirths") and ls.Rebirths.Value or 0 
+                    else 
+                        if ls and ls:FindFirstChild(s) then rawVal = ls[s].Value elseif tp:FindFirstChild(s) then rawVal = tp[s].Value end 
+                    end
+                    
+                    if not isBool then 
+                        local current = tonumber(rawVal) or 0
+                        if lastStatValues[s] and current > lastStatValues[s] then 
+                            statGains[s] = current - lastStatValues[s] 
+                            statGainTimes[s] = os.time()
+                        end
+                        lastStatValues[s] = current
+                        
+                        local gainStr = ""
+                        if statGains[s] and statGainTimes[s] then
+                            if os.time() - statGainTimes[s] <= 2 then
+                                gainStr = " (+ " .. formatNum(statGains[s]) .. " Per Train)"
+                            else
+                                statGains[s] = nil
+                                statGainTimes[s] = nil
+                            end
+                        end
+                        
+                        label.Text = s .. ": " .. formatNum(current) .. (s == "Rebirth Multiplier" and "%" or "") .. gainStr 
+                    else 
+                        label.Text = s .. ": " .. tostring(rawVal) 
+                    end
+                end
+                
+                if states.currentPetLabel then if states.currentPetTable == "Basic" then handleItemSelection(states.currentPetLabel, petRefsBasic, petDetails) elseif states.currentPetTable == "Advanced" then handleItemSelection(states.currentPetLabel, petRefsAdv, petDetails) elseif states.currentPetTable == "Rare" then handleItemSelection(states.currentPetLabel, petRefsRare, petDetails) elseif states.currentPetTable == "Epic" then handleItemSelection(states.currentPetLabel, petRefsEpic, petDetails) elseif states.currentPetTable == "Unique" then handleItemSelection(states.currentPetLabel, petRefsUnique, petDetails) end end
+                if states.currentAuraLabel then if states.currentAuraTable == "Basic" then handleAuraSelection(states.currentAuraLabel, auraRefsBasic, auraDetails) elseif states.currentAuraTable == "Advanced" then handleAuraSelection(states.currentAuraLabel, auraRefsAdv, auraDetails) elseif states.currentAuraTable == "Rare" then handleAuraSelection(states.currentAuraLabel, auraRefsRare, auraDetails) elseif states.currentAuraTable == "Epic" then handleAuraSelection(states.currentAuraLabel, auraRefsEpic, auraDetails) elseif states.currentAuraTable == "Unique" then handleAuraSelection(states.currentAuraLabel, auraRefsUnique, auraDetails) end end
+                
+                local uStr, ultF = "", tp:FindFirstChild("ultimatesFolder"); if ultF then for _, u in ipairs(ultF:GetChildren()) do uStr = uStr .. u.Name .. ": " .. formatNum(u.Value) .. "\n" end end; ultList.Text = uStr == "" and "None" or uStr
+                
+                local gpStr, opF = "", tp:FindFirstChild("ownedGamepasses")
+                if opF then for _, g in ipairs(opF:GetChildren()) do gpStr = gpStr .. g.Name .. "\n" end end
+                gpList.Text = gpStr == "" and "None" or gpStr
+                
+            else resetStatsUI() end
+        else for s, label in pairs(statsDisp) do label.Text = s .. ": None" end end
+    end
+end))
+
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(1) do local plist, currentMap = {}, {}; for _, p in ipairs(Players:GetPlayers()) do if p ~= player then local dName = p.DisplayName .. " (@" .. p.Name .. ")"; currentMap[dName] = p.Name; table.insert(plist, dName) end end; nameMap = currentMap; pKillDD.refresh(plist); whiteDD.refresh(plist); statsPlayerDD.refresh(plist) end
+end))
+
+-- ================================================================
+-- 10-MINUTE ANTI-AFK (RIGHT CLICK) - RESTORED
+-- ================================================================
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait(600) do
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0)
+            task.wait(0.1)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+        end)
+    end
+end))
+
+-- ================================================================
+-- RESTORED MISSING FUNCTIONALITY (AUTO PUNCH / PERSISTENT BUFFS)
+-- ================================================================
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while task.wait() do
+        local char = player.Character
+        if not char then continue end
+        
+        if states.fastPunch then
+            local p = getPunch()
+            if p and p:FindFirstChild("attackTime") then p.attackTime.Value = 0 end
+        end
+        
+        if states.autoPunch and not states.isTransitioning then
+            local equippedTool = char:FindFirstChildOfClass("Tool")
+            if equippedTool and equippedTool.Name == "Punch" then
+                player.muscleEvent:FireServer("punch", "leftHand")
+                player.muscleEvent:FireServer("punch", "rightHand")
+            end
+        end
+        
+        if states.accelReps then
+            local ult = player:FindFirstChild("ultimatesFolder") and player.ultimatesFolder:FindFirstChild("+5% Rep Speed")
+            if ult and ult.Value ~= 1000 then ult.Value = 1000 end
+        end
+    end
+end))
