@@ -39,6 +39,7 @@ end)
 game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
     if msg and msg ~= "" then
         pcall(function() 
+            SaveConfig()
             local timeFormatted = os.date("%H-%M-%S")
             local dateFormatted = os.date("%d-%m-%Y")
             local fileName = "DISCONNECTED:" .. timeFormatted .. ", " .. dateFormatted .. ".txt"
@@ -786,7 +787,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                                 if not rockCache[actualRockPart] then 
                                     rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame} 
                                 end
-                                actualRockPart.Size = Vector3.new(3, 3, 3)
+                                actualRockPart.Size = Vector3.new(1, 1, 1)
                                 actualRockPart.CanCollide = false
                                 actualRockPart.CFrame = targetHand.CFrame
                             end
@@ -820,8 +821,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 if shouldKill and not states.whitelist[p.Name] then 
                     p.Character.HumanoidRootPart.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
                     p.Character.HumanoidRootPart.AssemblyLinearVelocity, p.Character.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
-                    player.muscleEvent:FireServer("punch", "leftHand")
-                    player.muscleEvent:FireServer("punch", "rightHand")
+                    local punchTool = char:FindFirstChild("Punch") or player.Backpack:FindFirstChild("Punch")
+                    if punchTool then punchTool:Activate() end
                 end
             end end end
         end
@@ -831,34 +832,11 @@ end))
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoChest then
-            local char = player.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                for _, obj in ipairs(workspace:GetChildren()) do
-                    if obj.Name:lower():find("chest") then
-                        local ci = obj:FindFirstChild("circleInner")
-                        local csp = obj:FindFirstChild("circleSignPart")
-                        if ci and csp then
-                            local gui = csp:FindFirstChild("signGui")
-                            local tl = gui and gui:FindFirstChild("timeLabel")
-                            local ti = ci:FindFirstChildWhichIsA("TouchTransmitter") or ci:FindFirstChild("TouchInterest")
-                            if tl and ti then
-                                if tl.Text == "Ready To Collect" then
-                                    if firetouchtransmitter then
-                                        firetouchtransmitter(ci, root, 0)
-                                        task.wait(0.05)
-                                        firetouchtransmitter(ci, root, 1)
-                                    else
-                                        local oldPos = root.CFrame
-                                        root.CFrame = ci.CFrame
-                                        task.wait(0.2)
-                                        root.CFrame = oldPos
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
+            local chests = {"magmaChest", "legendsChest", "crystalChest", "mythicalChest", "jungleChest", "spaceChest", "groupRewards"}
+            for _, chestName in ipairs(chests) do
+                pcall(function()
+                    game:GetService("ReplicatedStorage").rEvents.checkChestRemote:InvokeServer(chestName)
+                end)
             end
         end
     end
@@ -987,16 +965,19 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         local char = player.Character
         if not char then continue end
         
-        if states.fastPunch then
-            local p = getPunch()
-            if p and p:FindFirstChild("attackTime") then p.attackTime.Value = 0 end
+        local p = getPunch()
+        if p and p:FindFirstChild("attackTime") then
+            if states.fastPunch then
+                p.attackTime.Value = 0
+            elseif not states.autoGlitch then
+                p.attackTime.Value = 0.35
+            end
         end
         
         if states.autoPunch and not states.isTransitioning then
             local equippedTool = char:FindFirstChildOfClass("Tool")
             if equippedTool and equippedTool.Name == "Punch" then
-                player.muscleEvent:FireServer("punch", "leftHand")
-                player.muscleEvent:FireServer("punch", "rightHand")
+                equippedTool:Activate()
             end
         end
         
