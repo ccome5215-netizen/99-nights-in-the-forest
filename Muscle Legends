@@ -58,7 +58,7 @@ local states = {
     autoLiftNoAnim = false, autoLiftValue = false, autoRebirthTarget = false, autoRebirthInf = false,
     selectedTool = nil, autoEquip = false, autoClaim = false, autoPunch = false, accelReps = false,
     fastPunch = false, autoSize = false, godMode = false, lockedPos = nil, lastSafePos = nil,
-    autoWalkSpeed = false, fly = false, flyBody = nil, autoMuscleKing = false,
+    autoWalkSpeed = false, fly = false, flyBody = nil, autoMuscleKing = false, lessLag = false,
     killTargets = {}, whitelist = {}, whitelistFriends = false, killActive = false, killEveryone = false,
     autoGoodKarma = false, autoEvilKarma = false, statsTarget = nil, trackStats = false,
     viewing = false, withoutFormatNum = false, autoChest = false, autoFortuneWheel = false,
@@ -68,7 +68,6 @@ local states = {
 local rockCache = {}
 local prevRepSpeed = 5
 local nameMap = {} 
-local toggleHand = false
 local lastStatValues = {}
 local statGains = {}
 local statGainTimes = {}
@@ -250,7 +249,7 @@ for i, tName in ipairs(tabs) do
     f.Position = UDim2.fromOffset(5, 65)
     f.BackgroundTransparency = 1
     f.Visible = (i == 1)
-    f.CanvasSize = UDim2.new(0, 0, 0, 2200)
+    f.CanvasSize = UDim2.new(0, 0, 0, 2300)
     f.ScrollBarThickness = 2
     
     local layout = Instance.new("UIListLayout", f)
@@ -401,6 +400,7 @@ createToggle(f1, "Auto Glitch", function(val)
         end
         states.autoGlitch = true
         states.glitchStartTime = os.time()
+        states.glitchAccumulated = 0
         return true
     else
         states.autoGlitch = false
@@ -431,6 +431,8 @@ autoGlitchTrainBtn = createToggle(f1, "Auto Glitch While Training", function(val
     states.autoGlitchTrain = val
     return val
 end)
+
+createToggle(f1, "Less Lag", function(v) states.lessLag = v end)
 
 local autoLiftNoAnimBtn, autoLiftBtn
 autoLiftNoAnimBtn = createToggle(f1, "Auto Lift (Without Anim)", function(val)
@@ -638,7 +640,6 @@ statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label)
         if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end 
         clearPetAuraUI()
         
-        -- Populate static Pet and Aura list strictly ONCE on selection
         local tp = Players:FindFirstChild(newTarget)
         if tp then
             local petsF = tp:FindFirstChild("petsFolder")
@@ -714,7 +715,7 @@ table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
 end))
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait() do
+    while task.wait(states.lessLag and 0.15 or nil) do
         if states.godMode then ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end
         if states.autoSize then ReplicatedStorage.rEvents.changeSpeedSizeRemote:InvokeServer("changeSize", tonumber(Config.SizeValue) or 1) end
         local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
@@ -753,9 +754,11 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             if not states.autoMuscleKing and not states.lockedPos then if states.godMode then if states.lastSafePos and (root.Position - states.lastSafePos.Position).Magnitude > 150 then root.CFrame = states.lastSafePos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero else states.lastSafePos = root.CFrame end else states.lastSafePos = root.CFrame end end
         end
         if states.autoEquip and states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" and char then
-            local hum, equippedTool, targetTool = char:FindFirstChild("Humanoid"), char:FindFirstChildOfClass("Tool"), player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
-            if targetTool then if equippedTool and equippedTool ~= targetTool then if hum then hum:UnequipTools() end end; if not char:FindFirstChild(states.selectedTool) then if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end end
-            else local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight"); if weightTool and equippedTool ~= weightTool then if hum and equippedTool then hum:UnequipTools() end; if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end end end
+            local targetTool = player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
+            local hum = char:FindFirstChild("Humanoid")
+            if targetTool and targetTool.Parent ~= char then
+                if hum then hum:EquipTool(targetTool) end
+            end
         end
     end
 end))
@@ -783,7 +786,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 end))
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait() do
+    while task.wait(states.lessLag and 0.15 or nil) do
         local char = player.Character; if not char then continue end; local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
         if root and hum and hum.Health > 0 then
             if states.autoGlitch and states.selectedRock and states.selectedMethod and not states.isTransitioning then
@@ -791,22 +794,35 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart"); if actualRockPart then
                         local punch = getPunch()
                         if states.selectedMethod == "Teleport" then 
-                            if punch and punch:FindFirstChild("attackTime") then punch.attackTime.Value = 0.05 end
+                            if punch then 
+                                if punch:FindFirstChild("attackTime") then punch.attackTime.Value = 0 end
+                                punch:Activate()
+                            end
                             local edgeOffset = (actualRockPart.Size.Z / 2) + 2.5 + ((tonumber(Config.SizeValue) or 1) * 0.25)
                             root.CFrame = CFrame.lookAt((actualRockPart.CFrame * CFrame.new(0, 0, edgeOffset)).Position, actualRockPart.Position)
                         elseif states.selectedMethod == "NonTeleport" then 
-                            local handName = toggleHand and "Left" or "Right"
-                            local targetHand = char:FindFirstChild(handName .. "Hand") or char:FindFirstChild(handName .. " Arm")
-                            if not targetHand then targetHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") end
-                            toggleHand = not toggleHand
+                            local leftH = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
+                            local rightH = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
                             
-                            if targetHand then 
+                            if leftH and rightH then 
+                                if not rockCache[actualRockPart] then 
+                                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame} 
+                                end
+                                actualRockPart.Size = Vector3.new(4, 4, 4)
+                                actualRockPart.CanCollide = false
+                                actualRockPart.CFrame = CFrame.new((leftH.Position + rightH.Position) / 2)
+                            elseif rightH then
                                 if not rockCache[actualRockPart] then 
                                     rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame} 
                                 end
                                 actualRockPart.Size = Vector3.new(1, 1, 1)
                                 actualRockPart.CanCollide = false
-                                actualRockPart.CFrame = targetHand.CFrame
+                                actualRockPart.CFrame = rightH.CFrame
+                            end
+                            
+                            if punch then
+                                if punch:FindFirstChild("attackTime") then punch.attackTime.Value = 0 end
+                                punch:Activate()
                             end
                         end
                         if states.autoGlitchTrain then 
@@ -858,9 +874,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function() while task.wait() do if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end end end))
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function() while task.wait(states.lessLag and 0.15 or nil) do if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end end end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO CLAIM GIFT
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoClaim then
@@ -873,7 +888,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO FORTUNE WHEEL
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoFortuneWheel then
@@ -889,7 +903,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 end))
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait() do
+    while task.wait(states.lessLag and 0.15 or nil) do
         if states.autoRebirthInf then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end
         if states.autoRebirthTarget then local target = tonumber(Config.RebirthTarget) or 0; if player.leaderstats.Rebirths.Value < target then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") else states.autoRebirthTarget = false; if SetToggle[autoRebirthTargetBtn] then SetToggle[autoRebirthTargetBtn](false) end end end
         if states.viewing and states.statsTarget then local tp = Players:FindFirstChild(states.statsTarget); if tp and tp.Character and tp.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = tp.Character.Humanoid end elseif not states.viewing and player.Character and player.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character.Humanoid end
@@ -960,9 +974,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do local plist, currentMap = {}, {}; for _, p in ipairs(Players:GetPlayers()) do if p ~= player then local dName = p.DisplayName .. " (@" .. p.Name .. ")"; currentMap[dName] = p.Name; table.insert(plist, dName) end end; nameMap = currentMap; pKillDD.refresh(plist); whiteDD.refresh(plist); statsPlayerDD.refresh(plist) end
 end))
 
--- ================================================================
--- 10-MINUTE ANTI-AFK (RIGHT CLICK) - RESTORED
--- ================================================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(600) do
         pcall(function()
@@ -973,11 +984,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- ================================================================
--- RESTORED MISSING FUNCTIONALITY (AUTO PUNCH / PERSISTENT BUFFS)
--- ================================================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait() do
+    while task.wait(states.lessLag and 0.15 or nil) do
         local char = player.Character
         if not char then continue end
         
