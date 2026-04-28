@@ -516,7 +516,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             currentTool.Parent = char
         end
 
-        -- Unequip all other tools except selected one
+        -- Unequip all other tools except selected one and Punch
         for _, t in ipairs(char:GetChildren()) do
             if t:IsA("Tool") and t.Name \~= states.selectedTool and t.Name \~= "Punch" then
                 t.Parent = backpack
@@ -829,82 +829,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- AUTO EQUIP TOOL LOGIC - FIXED AS REQUESTED
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    local weightToolName = "Weight"
-    local lastSelectedTool = nil
-
-    while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-
-        if not states.autoEquip or not states.selectedTool or states.selectedTool == "NO TOOL FOUND" then
-            task.wait(0.5)
-            continue
-        end
-
-        local char = player.Character
-        if not char then task.wait(0.5) continue end
-
-        local backpack = player.Backpack
-
-        -- If selected tool changed, reset lastSelectedTool
-        if lastSelectedTool \~= states.selectedTool then
-            lastSelectedTool = states.selectedTool
-        end
-
-        local targetTool = backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
-
-        -- If selected tool not found
-        if not targetTool then
-            -- Equip Weight first
-            local weight = backpack:FindFirstChild(weightToolName) or char:FindFirstChild(weightToolName)
-            if weight and not char:FindFirstChild(weightToolName) then
-                weight.Parent = char
-            end
-
-            -- Unequip all other tools
-            for _, t in ipairs(char:GetChildren()) do
-                if t:IsA("Tool") and t.Name \~= weightToolName then
-                    t.Parent = backpack
-                end
-            end
-            task.wait(0.3)
-            continue
-        end
-
-        -- Selected tool found
-        -- Unequip Weight if it's equipped
-        local weight = char:FindFirstChild(weightToolName)
-        if weight then
-            weight.Parent = backpack
-            task.wait(0.2)  -- wait until weight is unequipped
-        end
-
-        -- If selected tool is not equipped → equip it
-        if not char:FindFirstChild(states.selectedTool) then
-            targetTool.Parent = char
-        end
-
-        -- If already equipped selected tool → force refresh by unequipping then re-equipping
-        if char:FindFirstChild(states.selectedTool) then
-            local currentTool = char:FindFirstChild(states.selectedTool)
-            currentTool.Parent = backpack
-            task.wait(0.2)
-            currentTool.Parent = char
-        end
-
-        -- Unequip all other tools except selected one and Punch
-        for _, t in ipairs(char:GetChildren()) do
-            if t:IsA("Tool") and t.Name \~= states.selectedTool and t.Name \~= "Punch" then
-                t.Parent = backpack
-            end
-        end
-
-        task.wait(0.5)
-    end
-end))
-
--- GLITCH NON-TELEPORT: Do not change attackTime, keep Punch activation
+-- GLITCH MAIN LOGIC (NonTeleport does NOT activate Punch and does NOT change attackTime)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
@@ -914,9 +839,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 local rockModel = getRockInstance(states.selectedRock); if rockModel then
                     local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart"); if actualRockPart then
                         local punch = getPunch()
-                        if punch and punch:FindFirstChild("attackTime") and states.selectedMethod \~= "NonTeleport" then 
-                            punch.attackTime.Value = 0 
-                        end
 
                         if states.selectedMethod == "Teleport" then 
                             local edgeOffset = (actualRockPart.Size.Z / 2) + 2.5 + ((tonumber(Config.SizeValue) or 1) * 0.25)
@@ -944,10 +866,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                                 player.muscleEvent:FireServer("punch", "leftHand")
                                 player.muscleEvent:FireServer("punch", "rightHand")
                             end)
-                            
-                            if punch then
-                                punch.Parent = char
-                            end
                         end
                         
                         if states.autoGlitchTrain then 
