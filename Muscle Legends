@@ -173,8 +173,6 @@ local function handleGlitchCleanup(method, callback)
             task.wait(1)
             for rock, data in pairs(rockCache) do
                 if rock and rock.Parent then
-                    local glue = rock:FindFirstChild("RockGlue")
-                    if glue then glue:Destroy() end
                     rock.Size = data.Size; rock.CanCollide = data.CanCollide; rock.CFrame = data.CFrame
                 end
             end
@@ -705,10 +703,10 @@ auraEpicDD = createDropdown(f4, "Epic Auras", {"Nothing Here"}, false, function(
 auraUniqueDD = createDropdown(f4, "Unique Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Unique"; handleAuraSelection(l, auraRefsUnique, auraDetails) end)
 
 local ultHeader = Instance.new("TextLabel", f4); ultHeader.Size = UDim2.new(1, -10, 0, 20); ultHeader.Text = "--- ULTIMATES ---"; ultHeader.BackgroundTransparency = 1; ultHeader.TextColor3 = Color3.fromRGB(0, 200, 200); ultHeader.Font = Enum.Font.SourceSansBold; ultHeader.TextXAlignment = Enum.TextXAlignment.Left
-local ultList = Instance.new("TextLabel", f4); ultList.Size = UDim2.new(1, -10, 0, 0); ultList.BackgroundTransparency = 1; ultList.TextColor3 = Color3.new(1, 1, 1); ultList.TextXAlignment = Enum.TextXAlignment.Left; ultList.TextYAlignment = Enum.TextYAlignment.Top; ultList.Text = "None"; ultList.TextWrapped = true; ultList.AutomaticSize = Enum.AutomaticSize.Y
+local ultList = Instance.new("TextLabel", f4); ultList.Size = UDim2.new(1, -10, 0, 250); ultList.BackgroundTransparency = 1; ultList.TextColor3 = Color3.new(1, 1, 1); ultList.TextXAlignment = Enum.TextXAlignment.Left; ultList.TextYAlignment = Enum.TextYAlignment.Top; ultList.Text = "None"; ultList.TextWrapped = true
 
 local gpHeader = Instance.new("TextLabel", f4); gpHeader.Size = UDim2.new(1, -10, 0, 20); gpHeader.Text = "--- GAMEPASSES ---"; gpHeader.BackgroundTransparency = 1; gpHeader.TextColor3 = Color3.fromRGB(0, 200, 100); gpHeader.Font = Enum.Font.SourceSansBold; gpHeader.TextXAlignment = Enum.TextXAlignment.Left
-local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0, 0); gpList.BackgroundTransparency = 1; gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlignment.Left; gpList.TextYAlignment = Enum.TextYAlignment.Top; gpList.Text = "None"; gpList.TextWrapped = true; gpList.AutomaticSize = Enum.AutomaticSize.Y
+local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0, 200); gpList.BackgroundTransparency = 1; gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlignment.Left; gpList.TextYAlignment = Enum.TextYAlignment.Top; gpList.Text = "None"; gpList.TextWrapped = true
 
 ----------------------------------------------------------------
 -- MAIN LOOPS
@@ -777,23 +775,18 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 local targetTool = player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
                 local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight")
                 
-                if targetTool then
-                    if targetTool.Parent ~= char then 
-                        local hum = char:FindFirstChild("Humanoid")
-                        if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
-                    end
+                local toolToEquip = targetTool or weightTool
+                if toolToEquip and toolToEquip.Parent ~= char then
+                    local hum = char:FindFirstChild("Humanoid")
+                    if hum then hum:EquipTool(toolToEquip) else toolToEquip.Parent = char end
+                end
+            end
+            
+            if states.autoEquip or states.autoGlitch then
+                if not states.autoGlitchTrain then
+                    local expectedTool = states.selectedTool or "Weight"
                     for _, t in ipairs(char:GetChildren()) do
-                        if t:IsA("Tool") and t ~= targetTool and t.Name ~= "Punch" then
-                            t.Parent = player.Backpack
-                        end
-                    end
-                elseif weightTool then
-                    if weightTool.Parent ~= char then 
-                        local hum = char:FindFirstChild("Humanoid")
-                        if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end 
-                    end
-                    for _, t in ipairs(char:GetChildren()) do
-                        if t:IsA("Tool") and t ~= weightTool and t.Name ~= "Punch" then
+                        if t:IsA("Tool") and t.Name ~= expectedTool and t.Name ~= "Punch" then
                             t.Parent = player.Backpack
                         end
                     end
@@ -874,24 +867,14 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                                 end
                                 actualRockPart.Size = Vector3.new(1, 1, 1)
                                 actualRockPart.CanCollide = false
-                                
-                                local glue = actualRockPart:FindFirstChild("RockGlue")
-                                if not glue then
-                                    actualRockPart.CFrame = targetHand.CFrame
-                                    glue = Instance.new("WeldConstraint")
-                                    glue.Name = "RockGlue"
-                                    glue.Part0 = targetHand
-                                    glue.Part1 = actualRockPart
-                                    glue.Parent = actualRockPart
-                                elseif glue.Part0 ~= targetHand then
-                                    actualRockPart.CFrame = targetHand.CFrame
-                                    glue.Part0 = targetHand
-                                end
+                                actualRockPart.CFrame = targetHand.CFrame
                             end
                             
                             pcall(function()
-                                player.muscleEvent:FireServer("punch", "leftHand")
-                                player.muscleEvent:FireServer("punch", "rightHand")
+                                local args1 = { [1] = "punch", [2] = "leftHand" }
+                                player.muscleEvent:FireServer(unpack(args1))
+                                local args2 = { [1] = "punch", [2] = "rightHand" }
+                                player.muscleEvent:FireServer(unpack(args2))
                             end)
                         end
                         
@@ -1066,7 +1049,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         
         local p = getPunch()
         if p and p:FindFirstChild("attackTime") then
-            if states.fastPunch then
+            local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
+            if states.fastPunch or anyKillActive or (states.autoGlitch and states.selectedMethod == "Teleport") then
                 p.attackTime.Value = 0
             elseif not states.autoGlitch then
                 p.attackTime.Value = 0.35
