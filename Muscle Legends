@@ -434,10 +434,6 @@ autoGlitchTrainBtn = createToggle(f1, "Auto Glitch While Training", function(val
     return val
 end)
 
-createToggle(f1, "Less Lag", function(val)
-    states.lessLag = val
-end)
-
 local autoLiftNoAnimBtn, autoLiftBtn
 autoLiftNoAnimBtn = createToggle(f1, "Auto Lift (Without Anim)", function(val)
     states.autoLiftNoAnim = val
@@ -491,6 +487,8 @@ createToggle(f1, "Fast Punch", function(val) states.fastPunch = val; local p = g
 -- TAB 2: FARM
 ----------------------------------------------------------------
 local f2 = frames["Farm"]
+createToggle(f2, "Less Lag", function(val) states.lessLag = val end)
+
 local sizeBox = Instance.new("TextBox", f2)
 sizeBox.Size = UDim2.new(1, -10, 0, 30); sizeBox.Text = Config.SizeValue; sizeBox.PlaceholderText = "Size Value"; sizeBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40); sizeBox.TextColor3 = Color3.new(1, 1, 1)
 sizeBox:GetPropertyChangedSignal("Text"):Connect(function() sizeBox.Text = sizeBox.Text:gsub("%D", "") end)
@@ -644,6 +642,7 @@ statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label)
         if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end 
         clearPetAuraUI()
         
+        -- Populate static Pet and Aura list strictly ONCE on selection
         local tp = Players:FindFirstChild(newTarget)
         if tp then
             local petsF = tp:FindFirstChild("petsFolder")
@@ -710,14 +709,11 @@ local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0,
 ----------------------------------------------------------------
 -- MAIN LOOPS
 ----------------------------------------------------------------
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-        local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
-            local root = char.HumanoidRootPart
-            if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
-            elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
-        end
+table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
+    local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
+        local root = char.HumanoidRootPart
+        if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
+        elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
     end
 end))
 
@@ -858,7 +854,9 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                             end
 
                         elseif states.selectedMethod == "NonTeleport" then 
-                            local targetHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+                            local handPrefix = toggleHand and "Left" or "Right"
+                            local targetHand = char:FindFirstChild(handPrefix .. "Hand") or char:FindFirstChild(handPrefix .. " Arm")
+                            toggleHand = not toggleHand
                             
                             if targetHand then 
                                 if not rockCache[actualRockPart] then 
