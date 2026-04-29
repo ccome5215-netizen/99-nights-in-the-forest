@@ -644,7 +644,6 @@ statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label)
         if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end 
         clearPetAuraUI()
         
-        -- Populate static Pet and Aura list strictly ONCE on selection
         local tp = Players:FindFirstChild(newTarget)
         if tp then
             local petsF = tp:FindFirstChild("petsFolder")
@@ -880,9 +879,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                         
                         if states.autoGlitchTrain then 
                             local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
-                            for _, tool in ipairs(player.Backpack:GetChildren()) do
-                                if allowed[tool.Name] then tool.Parent = char end
-                            end
                             for _, tool in ipairs(char:GetChildren()) do 
                                 if tool:IsA("Tool") and allowed[tool.Name] then 
                                     tool:Activate() 
