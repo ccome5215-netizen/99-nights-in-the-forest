@@ -491,16 +491,8 @@ autoLiftBtn = createToggle(f1, "Auto Lift", function(val)
     if val and autoLiftNoAnimBtn then states.autoLiftNoAnim = false; if SetToggle[autoLiftNoAnimBtn] then SetToggle[autoLiftNoAnimBtn](false) end end
 end)
 
-local toolDD = createDropdown(f1, "Tool Dropdown", {"NO TOOL FOUND"}, false, function(v) states.selectedTool = v end)
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    local filter = {["Weight"]=1, ["Situps"]=1, ["Pushups"]=1, ["Handstands"]=1}
-    while task.wait(1) do
-        local list = {}
-        for _, t in ipairs(player.Backpack:GetChildren()) do if t:IsA("Tool") and filter[t.Name] then table.insert(list, t.Name) end end
-        if player.Character then for _, t in ipairs(player.Character:GetChildren()) do if t:IsA("Tool") and filter[t.Name] then table.insert(list, t.Name) end end end
-        if #list == 0 then toolDD.refresh({"NO TOOL FOUND"}) else toolDD.refresh(list) end
-    end
-end))
+local toolOptions = {"Weight", "Pushups", "Situps", "Handstands"}
+local toolDD = createDropdown(f1, "Tool Dropdown", toolOptions, false, function(v) states.selectedTool = v end)
 
 createToggle(f1, "Auto Equip Tool", function(v) if v and (not states.selectedTool or states.selectedTool == "NO TOOL FOUND") then return false end; states.autoEquip = v end)
 
@@ -755,11 +747,14 @@ local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0,
 ----------------------------------------------------------------
 -- MAIN LOOPS
 ----------------------------------------------------------------
-table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
-    local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
-        local root = char.HumanoidRootPart
-        if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
-        elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while true do
+        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
+            elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
+        end
     end
 end))
 
@@ -812,14 +807,29 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
         local char = player.Character
         if char then
+            local hum = char:FindFirstChild("Humanoid")
             if states.autoEquip then
-                local targetTool = player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
+                local targetTool = states.selectedTool and (player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool))
                 local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight")
                 
-                local toolToEquip = targetTool or weightTool
-                if toolToEquip and toolToEquip.Parent ~= char then
-                    local hum = char:FindFirstChild("Humanoid")
-                    if hum then hum:EquipTool(toolToEquip) else toolToEquip.Parent = char end
+                if targetTool then
+                    if targetTool.Parent ~= char then 
+                        if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
+                    end
+                    for _, t in ipairs(char:GetChildren()) do
+                        if t:IsA("Tool") and t ~= targetTool and t.Name ~= "Punch" then
+                            t.Parent = player.Backpack
+                        end
+                    end
+                elseif weightTool then
+                    if weightTool.Parent ~= char then 
+                        if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end 
+                    end
+                    for _, t in ipairs(char:GetChildren()) do
+                        if t:IsA("Tool") and t ~= weightTool and t.Name ~= "Punch" then
+                            t.Parent = player.Backpack
+                        end
+                    end
                 end
             end
             
@@ -839,12 +849,15 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             if weightTool then
                 local handle = weightTool:FindFirstChild("Handle")
                 local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
-                if handle and rh and not handle:FindFirstChild("WeightGlue") then
-                    local glue = Instance.new("WeldConstraint")
-                    glue.Name = "WeightGlue"
-                    glue.Part0 = rh
-                    glue.Part1 = handle
-                    glue.Parent = handle
+                if handle and rh then
+                    handle.Anchored = false 
+                    if not handle:FindFirstChild("WeightGlue") then
+                        local glue = Instance.new("WeldConstraint")
+                        glue.Name = "WeightGlue"
+                        glue.Part0 = rh
+                        glue.Part1 = handle
+                        glue.Parent = handle
+                    end
                 end
             end
         end
@@ -1077,7 +1090,21 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 end))
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do local plist, currentMap = {}, {}; for _, p in ipairs(Players:GetPlayers()) do local dName = p.DisplayName .. " (@" .. p.Name .. ")"; currentMap[dName] = p.Name; table.insert(plist, dName) end; nameMap = currentMap; pKillDD.refresh(plist); whiteDD.refresh(plist); statsPlayerDD.refresh(plist) end
+    while task.wait(1) do 
+        local killList, statsList, currentMap = {}, {}, {}
+        for _, p in ipairs(Players:GetPlayers()) do 
+            local dName = p.DisplayName .. " (@" .. p.Name .. ")"
+            currentMap[dName] = p.Name
+            table.insert(statsList, dName)
+            if p ~= player then
+                table.insert(killList, dName)
+            end
+        end
+        nameMap = currentMap
+        pKillDD.refresh(killList)
+        whiteDD.refresh(killList)
+        statsPlayerDD.refresh(statsList) 
+    end
 end))
 
 -- ================================================================
