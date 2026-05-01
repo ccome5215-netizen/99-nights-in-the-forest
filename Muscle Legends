@@ -747,14 +747,11 @@ local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0,
 ----------------------------------------------------------------
 -- MAIN LOOPS
 ----------------------------------------------------------------
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-        local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
-            local root = char.HumanoidRootPart
-            if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
-            elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
-        end
+table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
+    local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
+        local root = char.HumanoidRootPart
+        if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
+        elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
     end
 end))
 
@@ -808,55 +805,58 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         local char = player.Character
         if char then
             local hum = char:FindFirstChild("Humanoid")
+            local targetTool = nil
+            if states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" then
+                targetTool = player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
+            end
+            local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight")
+
             if states.autoEquip then
-                local targetTool = states.selectedTool and (player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool))
-                local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight")
-                
                 if targetTool then
                     if targetTool.Parent ~= char then 
-                        if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
+                        pcall(function()
+                            if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
+                        end)
                     end
-                    for _, t in ipairs(char:GetChildren()) do
-                        if t:IsA("Tool") and t ~= targetTool and t.Name ~= "Punch" then
-                            t.Parent = player.Backpack
-                        end
+                    if weightTool and weightTool.Parent == char then
+                        pcall(function() weightTool.Parent = player.Backpack end)
                     end
                 elseif weightTool then
                     if weightTool.Parent ~= char then 
-                        if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end 
-                    end
-                    for _, t in ipairs(char:GetChildren()) do
-                        if t:IsA("Tool") and t ~= weightTool and t.Name ~= "Punch" then
-                            t.Parent = player.Backpack
-                        end
+                        pcall(function()
+                            if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end 
+                        end)
                     end
                 end
             end
             
             if states.autoEquip or states.autoGlitch then
                 if not states.autoGlitchTrain then
-                    local expectedTool = states.selectedTool or "Weight"
+                    local targetToolExists = states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" and (player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool))
+                    local expectedTool = targetToolExists and states.selectedTool or "Weight"
+                    
                     for _, t in ipairs(char:GetChildren()) do
                         if t:IsA("Tool") and t.Name ~= expectedTool and t.Name ~= "Punch" then
-                            t.Parent = player.Backpack
+                            pcall(function() t.Parent = player.Backpack end)
                         end
                     end
                 end
             end
             
             -- Glue Weight Tool so it never falls
-            local weightTool = char:FindFirstChild("Weight") or player.Backpack:FindFirstChild("Weight")
             if weightTool then
                 local handle = weightTool:FindFirstChild("Handle")
                 local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
                 if handle and rh then
-                    handle.Anchored = false 
+                    pcall(function() handle.Anchored = false end) 
                     if not handle:FindFirstChild("WeightGlue") then
-                        local glue = Instance.new("WeldConstraint")
-                        glue.Name = "WeightGlue"
-                        glue.Part0 = rh
-                        glue.Part1 = handle
-                        glue.Parent = handle
+                        pcall(function()
+                            local glue = Instance.new("WeldConstraint")
+                            glue.Name = "WeightGlue"
+                            glue.Part0 = rh
+                            glue.Part1 = handle
+                            glue.Parent = handle
+                        end)
                     end
                 end
             end
@@ -871,16 +871,18 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         if char then 
             for _, t in ipairs(char:GetChildren()) do 
                 if t:IsA("Tool") then 
-                    t.CanBeDropped = false; 
-                    if not allowedTools[t.Name] then 
-                        t.Parent = player.Backpack 
-                    end 
+                    pcall(function()
+                        t.CanBeDropped = false; 
+                        if not allowedTools[t.Name] then 
+                            t.Parent = player.Backpack 
+                        end 
+                    end)
                 end 
             end 
         end; 
         for _, t in ipairs(player.Backpack:GetChildren()) do 
             if t:IsA("Tool") then 
-                t.CanBeDropped = false 
+                pcall(function() t.CanBeDropped = false end)
             end 
         end 
     end
@@ -904,7 +906,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                         
                         -- Always keep Punch equipped during Auto Glitch
                         if punchTool and punchTool.Parent ~= char then 
-                            punchTool.Parent = char 
+                            pcall(function() punchTool.Parent = char end)
                         end
 
                         if states.selectedMethod == "Teleport" then 
@@ -953,12 +955,14 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                             local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
                             for _, tool in ipairs(char:GetChildren()) do 
                                 if tool:IsA("Tool") and allowed[tool.Name] then 
-                                    tool:Activate() 
+                                    pcall(function() tool:Activate() end)
                                 end 
                             end
                         else 
                             for _, tool in ipairs(char:GetChildren()) do 
-                                if tool:IsA("Tool") and tool.Name ~= "Punch" then tool.Parent = player.Backpack end 
+                                if tool:IsA("Tool") and tool.Name ~= "Punch" then 
+                                    pcall(function() tool.Parent = player.Backpack end)
+                                end 
                             end
                         end
                     end
@@ -971,7 +975,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     p.Character.HumanoidRootPart.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
                     p.Character.HumanoidRootPart.AssemblyLinearVelocity, p.Character.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
                     local punchTool = char:FindFirstChild("Punch") or player.Backpack:FindFirstChild("Punch")
-                    if punchTool then punchTool:Activate() end
+                    if punchTool then pcall(function() punchTool:Activate() end) end
                 end
             end end end
         end
@@ -1133,24 +1137,24 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         if p and p:FindFirstChild("attackTime") then
             local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
             if states.fastPunch or anyKillActive or (states.autoGlitch and states.selectedMethod == "Teleport") then
-                p.attackTime.Value = 0
+                pcall(function() p.attackTime.Value = 0 end)
             elseif states.autoGlitch and states.selectedMethod == "Teleport" then
-                p.attackTime.Value = 0.05
+                pcall(function() p.attackTime.Value = 0.05 end)
             elseif not states.autoGlitch then
-                p.attackTime.Value = 0.35
+                pcall(function() p.attackTime.Value = 0.35 end)
             end
         end
         
         if states.autoPunch and not states.isTransitioning then
             local equippedTool = char:FindFirstChildOfClass("Tool")
             if equippedTool and equippedTool.Name == "Punch" then
-                equippedTool:Activate()
+                pcall(function() equippedTool:Activate() end)
             end
         end
         
         if states.accelReps then
             local ult = player:FindFirstChild("ultimatesFolder") and player.ultimatesFolder:FindFirstChild("+5% Rep Speed")
-            if ult and ult.Value ~= 1000 then ult.Value = 1000 end
+            if ult and ult.Value ~= 1000 then pcall(function() ult.Value = 1000 end) end
         end
     end
 end))
