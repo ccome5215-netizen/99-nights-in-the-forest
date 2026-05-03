@@ -439,11 +439,18 @@ local timerLabel = Instance.new("TextLabel", f1)
 timerLabel.Size = UDim2.new(1, -10, 0, 20); timerLabel.BackgroundTransparency = 1; timerLabel.TextColor3 = Color3.fromRGB(200, 200, 200); timerLabel.Text = "Glitch Timer: 00:00:00:00"
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do
+    while true do
+        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
         local total = states.glitchAccumulated
         if states.autoGlitch then total = total + (os.time() - states.glitchStartTime) end
         local d, h, m, s = math.floor(total / 86400), math.floor((total % 86400) / 3600), math.floor((total % 3600) / 60), total % 60
         timerLabel.Text = string.format("Glitch Timer: %02d:%02d:%02d:%02d", d, h, m, s)
+        -- wait a full second before next update (use heartbeat to respect lessLag)
+        if states.lessLag then
+            for _ = 1, 9 do task.wait(0.1) end
+        else
+            for _ = 1, 60 do RunService.Heartbeat:Wait() end
+        end
     end
 end))
 
@@ -772,11 +779,16 @@ gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlign
 gpList.AutomaticSize = Enum.AutomaticSize.Y
 
 ----------------------------------------------------------------
--- MAIN LOOPS
+-- MAIN LOOPS (all use Heartbeat / task.wait(0.1) based on lessLag)
 ----------------------------------------------------------------
+-- Common wait function for loops
+local function loopWait()
+    if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+end
+
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        loopWait()
         local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
             local root = char.HumanoidRootPart
             if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
@@ -787,7 +799,7 @@ end))
 
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        loopWait()
         if states.godMode then pcall(function() ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end) end
         if states.autoSize then pcall(function() ReplicatedStorage.rEvents.changeSpeedSizeRemote:InvokeServer("changeSize", tonumber(Config.SizeValue) or 1) end) end
         local char = player.Character;
@@ -835,7 +847,7 @@ end))
 -- AUTO EQUIP & WEIGHT GLUE LOGIC
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        loopWait()
         if not player:FindFirstChild("Backpack") then continue end
         local char = player.Character
         if char then
@@ -902,38 +914,43 @@ end))
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     local allowedTools = {["Punch"]=true, ["Weight"]=true, ["Stomp"]=true, 
     ["Ground Slam"]=true, ["Pushups"]=true, ["Handstands"]=true, ["Situps"]=true}
-    while task.wait(0.5) do 
-        local char = player.Character;
-        if char then 
-            for _, t in ipairs(char:GetChildren()) do 
+    -- This loop runs every 0.5 seconds using heartbeat/lessLag
+    local last = 0
+    while true do
+        loopWait()
+        local now = os.clock()
+        if now - last >= 0.5 then
+            last = now
+            local char = player.Character;
+            if char then 
+                for _, t in ipairs(char:GetChildren()) do 
+                    if t:IsA("Tool") then 
+                        pcall(function()
+                            t.CanBeDropped = false; 
+                            if not allowedTools[t.Name] then 
+                                t.Parent = player.Backpack 
+                            end 
+                        end)
+                    end 
+                end 
+            end;
+            for _, t in ipairs(player.Backpack:GetChildren()) do 
                 if t:IsA("Tool") then 
-                    pcall(function()
-                        t.CanBeDropped = false; 
-                        if not allowedTools[t.Name] then 
-                            t.Parent = player.Backpack 
-                        end 
-                    end)
+                    pcall(function() t.CanBeDropped = false end)
                 end 
             end 
-        end;
-        for _, t in ipairs(player.Backpack:GetChildren()) do 
-            if t:IsA("Tool") then 
-                pcall(function() t.CanBeDropped = false end)
-            end 
-        end 
+        end
     end
 end))
 
--- GLITCH MAIN LOGIC
+-- GLITCH MAIN LOGIC (already Heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        loopWait()
         local char = player.Character; if not char then continue end; local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
         if root and hum and hum.Health > 0 then
             local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
-            if anyKillActive then
-                updateVisibility(true)
-            end
+            if anyKillActive then updateVisibility(true) end
 
             if states.autoGlitch and states.selectedRock and states.selectedMethod and not states.isTransitioning then
                 local rockModel = getRockInstance(states.selectedRock); if rockModel then
@@ -941,7 +958,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     if actualRockPart then
                         local punchTool = player.Backpack:FindFirstChild("Punch") or char:FindFirstChild("Punch")
                         
-                        -- Always keep Punch equipped during Auto Glitch
                         if punchTool and punchTool.Parent ~= char then 
                             pcall(function() punchTool.Parent = char end)
                         end
@@ -952,9 +968,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                             local edgeOffset = (actualRockPart.Size.Z / 2) + 2.5 + ((tonumber(Config.SizeValue) or 1) * 0.25)
                             root.CFrame = CFrame.lookAt((actualRockPart.CFrame * CFrame.new(0, 0, edgeOffset)).Position, actualRockPart.Position)
                             
-                            if punchTool then
-                                punchTool:Activate()
-                            end
+                            if punchTool then punchTool:Activate() end
 
                         elseif states.selectedMethod == "NonTeleport" then 
                             local handPrefix = toggleHand and "Left" or "Right"
@@ -988,14 +1002,9 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                             end)
                         end
                         
-                        if states.autoGlitchTrain then 
-                            local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
-                            for _, tool in ipairs(char:GetChildren()) do 
-                                if tool:IsA("Tool") and allowed[tool.Name] then 
-                                    pcall(function() tool:Activate() end)
-                                end 
-                            end
-                        else 
+                        -- Auto Glitch While Training no longer activates training tools.
+                        -- Only Punch is activated (handled above per method). No additional activation.
+                        if not states.autoGlitchTrain then 
                             for _, tool in ipairs(char:GetChildren()) do 
                                 if tool:IsA("Tool") and tool.Name ~= "Punch" then 
                                     pcall(function() tool.Parent = player.Backpack end)
@@ -1028,55 +1037,82 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- AUTO CHEST (1 sec interval, now heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do
+    local lastChest = 0
+    while true do
+        loopWait()
         if states.autoChest then
-            local chests = {"magmaChest", "legendsChest", "crystalChest", "mythicalChest", "jungleChest", "spaceChest", "groupRewards"}
-            for _, chestName in ipairs(chests) do
-                pcall(function()
-                    game:GetService("ReplicatedStorage").rEvents.checkChestRemote:InvokeServer(chestName)
-                end)
+            local now = os.clock()
+            if now - lastChest >= 1 then
+                lastChest = now
+                local chests = {"magmaChest", "legendsChest", "crystalChest", "mythicalChest", "jungleChest", "spaceChest", "groupRewards"}
+                for _, chestName in ipairs(chests) do
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").rEvents.checkChestRemote:InvokeServer(chestName)
+                    end)
+                end
             end
         end
     end
 end))
 
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function() while true do if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end end end))
+-- AUTO LIFT (No Anim) – heartbeat
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function() while true do loopWait() if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end end end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO CLAIM GIFT
+-- AUTO CLAIM GIFT (1 sec interval, heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do
+    local lastClaim = 0
+    while true do
+        loopWait()
         if states.autoClaim then
-            for i=1,8 do
+            local now = os.clock()
+            if now - lastClaim >= 1 then
+                lastClaim = now
+                for i=1,8 do
+                    pcall(function()
+                        ReplicatedStorage.rEvents.freeGiftClaimRemote:InvokeServer("claimGift", i)
+                    end)
+                end
+            end
+        end
+    end
+end))
+
+-- AUTO FORTUNE WHEEL (1 sec interval, heartbeat)
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    local lastFortune = 0
+    while true do
+        loopWait()
+        if states.autoFortuneWheel then
+            local now = os.clock()
+            if now - lastFortune >= 1 then
+                lastFortune = now
                 pcall(function()
-                    ReplicatedStorage.rEvents.freeGiftClaimRemote:InvokeServer("claimGift", i)
+                    local args = {
+                        [1] = "openFortuneWheel",
+                        [2] = game:GetService("ReplicatedStorage").fortuneWheelChances:FindFirstChild("Fortune Wheel"),
+                    }
+                    game:GetService("ReplicatedStorage").rEvents.openFortuneWheelRemote:InvokeServer(unpack(args))
                 end)
             end
         end
     end
 end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO FORTUNE WHEEL
+-- AUTO REBIRTH / STATS / VIEW (heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do
-        if states.autoFortuneWheel then
-            pcall(function()
-                local args = {
-                    [1] = "openFortuneWheel",
-                    [2] = game:GetService("ReplicatedStorage").fortuneWheelChances:FindFirstChild("Fortune Wheel"),
-                }
-                game:GetService("ReplicatedStorage").rEvents.openFortuneWheelRemote:InvokeServer(unpack(args))
-            end)
+    local lastRebirth = 0
+    while true do
+        loopWait()
+        local now = os.clock()
+        if now - lastRebirth >= 1 then
+            lastRebirth = now
+            if states.autoRebirthInf then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end
+            if states.autoRebirthTarget then local target = tonumber(Config.RebirthTarget) or 0;
+                if player.leaderstats.Rebirths.Value < target then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") else states.autoRebirthTarget = false;
+                if SetToggle[autoRebirthTargetBtn] then SetToggle[autoRebirthTargetBtn](false) end end end
         end
-    end
-end))
-
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait() do
-        if states.autoRebirthInf then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end
-        if states.autoRebirthTarget then local target = tonumber(Config.RebirthTarget) or 0;
-            if player.leaderstats.Rebirths.Value < target then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") else states.autoRebirthTarget = false;
-            if SetToggle[autoRebirthTargetBtn] then SetToggle[autoRebirthTargetBtn](false) end end end
         if states.viewing and states.statsTarget then local tp = Players:FindFirstChild(states.statsTarget);
             if tp and tp.Character and tp.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = tp.Character.Humanoid end elseif not states.viewing and player.Character and player.Character:FindFirstChild("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character.Humanoid end
         
@@ -1148,29 +1184,35 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- PLAYER LIST REFRESH (1 sec interval, heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(1) do 
-        local killList, statsList, currentMap = {}, {}, {}
-        for _, p in ipairs(Players:GetPlayers()) do 
-            local dName = p.DisplayName .. " (@" .. p.Name .. ")"
-            currentMap[dName] = p.Name
-            table.insert(statsList, dName)
-            if p ~= player then
-                table.insert(killList, dName)
+    local lastRefresh = 0
+    while true do 
+        loopWait()
+        local now = os.clock()
+        if now - lastRefresh >= 1 then
+            lastRefresh = now
+            local killList, statsList, currentMap = {}, {}, {}
+            for _, p in ipairs(Players:GetPlayers()) do 
+                local dName = p.DisplayName .. " (@" .. p.Name .. ")"
+                currentMap[dName] = p.Name
+                table.insert(statsList, dName)
+                if p ~= player then
+                    table.insert(killList, dName)
+                end
             end
+            nameMap = currentMap
+            pKillDD.refresh(killList)
+            whiteDD.refresh(killList)
+            statsPlayerDD.refresh(statsList) 
         end
-        nameMap = currentMap
-        pKillDD.refresh(killList)
-        whiteDD.refresh(killList)
-        statsPlayerDD.refresh(statsList) 
     end
 end))
 
--- ================================================================
--- 10-MINUTE ANTI-AFK (RIGHT CLICK) - RESTORED
--- ================================================================
+-- 10-MINUTE ANTI-AFK (simple – right click every 600 seconds)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while task.wait(600) do
+    while true do
+        task.wait(600)
         pcall(function()
             VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0)
             task.wait(0.1)
@@ -1179,12 +1221,10 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- ================================================================
--- RESTORED MISSING FUNCTIONALITY (AUTO PUNCH / PERSISTENT BUFFS)
--- ================================================================
+-- AUTO PUNCH & BUFFS (heartbeat)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        loopWait()
         local char = player.Character
         if not char then continue end
         
