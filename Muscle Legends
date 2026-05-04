@@ -437,7 +437,6 @@ end)
 local timerLabel = Instance.new("TextLabel", f1)
 timerLabel.Size = UDim2.new(1, -10, 0, 20); timerLabel.BackgroundTransparency = 1; timerLabel.TextColor3 = Color3.fromRGB(200, 200, 200); timerLabel.Text = "Glitch Timer: 00:00:00:00"
 
--- Glitch timer – uses task.wait (t)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         task.wait(1)
@@ -774,14 +773,6 @@ gpList.AutomaticSize = Enum.AutomaticSize.Y
 
 ----------------------------------------------------------------
 -- MAIN LOOPS
--- 
--- t = task.wait()  loops
--- h = Heartbeat    loops
--- 
--- t: auto size, auto equip tool, god mode, auto muscle king,
---    auto glitch, auto rebirth/view/stats, player list refresh,
---    anti-afk, auto claim gift, auto fortune wheel, auto chest
--- h: all other loops (fly, walk speed, lock pos, kill, punch buffs, etc.)
 ----------------------------------------------------------------
 
 -- t: Auto Size Toggle
@@ -800,7 +791,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- t: Auto Muscle King + Lock Position (position enforcement)
+-- t: Auto Muscle King + Lock Position
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         task.wait(0.1)
@@ -825,10 +816,10 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- t: Auto Equip Tool + Weight Glue
+-- t: Auto Equip Tool + Weight Glue (FIXED for Weight tool)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        task.wait(1)  -- runs every 1 second, works through very long rebirths
+        task.wait(1)
         if not player:FindFirstChild("Backpack") then continue end
         local char = player.Character
         if not char then continue end
@@ -847,7 +838,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                         if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
                     end)
                 end
-                if weightTool and weightTool.Parent == char then
+                -- FIX: only put Weight back if the selected tool is NOT Weight
+                if weightTool and weightTool.Parent == char and targetTool ~= weightTool then
                     pcall(function() weightTool.Parent = player.Backpack end)
                 end
             elseif weightTool then
@@ -892,10 +884,10 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- t: Auto Glitch Main Logic (both methods use task.wait; NonTeleport no longer edits originalPosition)
+-- t: Auto Glitch Main Logic (NO DELAY - uses task.wait() instead of task.wait(0.1))
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait()  -- fastest possible using task.scheduler (~1 frame)
         local char = player.Character
         if not char then continue end
         local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
@@ -935,7 +927,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                             actualRockPart.Size = Vector3.new(newSize, newSize, newSize)
                             actualRockPart.CanCollide = false
                             actualRockPart.CFrame = targetHand.CFrame
-                            -- originalPosition editing removed per request
                         end
                         
                         pcall(function()
@@ -1101,7 +1092,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             else
                 resetStatsUI()
             end
-        else            for s, label in pairs(statsDisp) do label.Text = s .. ": None" end
+        else
+            for s, label in pairs(statsDisp) do label.Text = s .. ": None" end
         end
     end
 end))
@@ -1145,10 +1137,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
         if not root or not hum then continue end
 
-        -- WalkSpeed
         if states.autoWalkSpeed then hum.WalkSpeed = tonumber(Config.WalkSpeed) or 16 end
 
-        -- Fly
         if states.fly then
             hum.PlatformStand = true
             if not states.flyBody or not states.flyBody.Velocity.Parent then
@@ -1181,7 +1171,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             end
         end
 
-        -- God Mode Safe Position
         if not states.autoMuscleKing and not states.lockedPos then
             if states.godMode then
                 if states.lastSafePos and (root.Position - states.lastSafePos.Position).Magnitude > 150 then
@@ -1195,7 +1184,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             end
         end
 
-        -- Kill Logic
         local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
         if anyKillActive then updateVisibility(true) end
         local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
@@ -1225,7 +1213,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             end
         end
 
-        -- Punch AttackTime / Auto Punch / Buffs
         local p = getPunch()
         if p and p:FindFirstChild("attackTime") then
             if states.fastPunch or anyKillActive or (states.autoGlitch and states.selectedMethod == "Teleport") then
@@ -1249,10 +1236,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             if ult and ult.Value ~= 1000 then pcall(function() ult.Value = 1000 end) end
         end
 
-        -- Auto Lift No Anim
         if states.autoLiftNoAnim then pcall(function() player.muscleEvent:FireServer("rep") end) end
 
-        -- Prevent tools from dropping
         local allowedTools = {["Punch"]=true, ["Weight"]=true, ["Stomp"]=true, 
         ["Ground Slam"]=true, ["Pushups"]=true, ["Handstands"]=true, ["Situps"]=true}
         for _, t in ipairs(char:GetChildren()) do 
