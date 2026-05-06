@@ -374,11 +374,9 @@ end
 local lockPosBtn, autoRebirthTargetBtn, autoRebirthInfBtn, trackBtn
 
 ----------------------------------------------------------------
--- KILL VISIBILITY UTILITY
+-- KILL VISIBILITY UTILITY (removed)
 ----------------------------------------------------------------
-local function updateVisibility(isInvisible)
-    -- Visibility purposefully removed
-end
+local function updateVisibility(isInvisible) end
 
 local function checkResetKillAttackTime()
     if not states.killActive and not states.killEveryone and not states.autoGoodKarma and not states.autoEvilKarma then
@@ -773,6 +771,7 @@ gpList.AutomaticSize = Enum.AutomaticSize.Y
 ----------------------------------------------------------------
 -- MAIN LOOPS
 ----------------------------------------------------------------
+-- Position lock (respects Less Lag)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
@@ -784,6 +783,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- God mode, size, fly, walkspeed (respects Less Lag)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
@@ -831,7 +831,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- WEIGHT GLUE LOOP (NEW)
+-- Weight Glue (respects Less Lag)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
@@ -854,7 +854,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 end
             end
         else
-            -- If not holding Weight, destroy any existing WeightGlue in the character
             for _, t in ipairs(char:GetChildren()) do
                 if t:IsA("Tool") and t.Name == "Weight" then
                     local h = t:FindFirstChild("Handle")
@@ -868,15 +867,13 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- AUTO EQUIP & WEIGHT GLUE LOGIC (MODIFIED TO WAIT FOR FULL CHARACTER LOAD)
+-- Auto Equip (respects Less Lag, waits for full character)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
         if not player:FindFirstChild("Backpack") then continue end
         local char = player.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
-            continue
-        end
+        if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then continue end
         local hum = char.Humanoid
         local targetTool = nil
         if states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" then
@@ -887,18 +884,14 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         if states.autoEquip then
             if targetTool then
                 if targetTool.Parent ~= char then 
-                    pcall(function()
-                        if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end 
-                    end)
+                    pcall(function() if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end end)
                 end
                 if weightTool and weightTool.Parent == char then
                     pcall(function() weightTool.Parent = player.Backpack end)
                 end
             elseif weightTool then
                 if weightTool.Parent ~= char then 
-                    pcall(function()
-                        if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end 
-                    end)
+                    pcall(function() if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end end)
                 end
             end
         end
@@ -907,7 +900,6 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             if not states.autoGlitchTrain then
                 local targetToolExists = states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" and (player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool))
                 local expectedTool = targetToolExists and states.selectedTool or "Weight"
-                
                 for _, t in ipairs(char:GetChildren()) do
                     if t:IsA("Tool") and t.Name ~= expectedTool and t.Name ~= "Punch" then
                         pcall(function() t.Parent = player.Backpack end)
@@ -918,6 +910,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- Anti-drop tools
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     local allowedTools = {["Punch"]=true, ["Weight"]=true, ["Stomp"]=true, 
     ["Ground Slam"]=true, ["Pushups"]=true, ["Handstands"]=true, ["Situps"]=true}
@@ -943,79 +936,94 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- GLITCH MAIN LOGIC (kill logic remains with case-insensitive hand/arm exclusion)
+-- ================================
+-- DEDICATED AUTO GLITCH LOOP (ALWAYS task.wait() – NO HEARTBEAT, NO LESS LAG)
+-- ================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-        local char = player.Character; if not char then continue end; local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
-        if root and hum and hum.Health > 0 then
-            local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
+        task.wait()  -- yields once per frame, no delay, never blocked by Less Lag
+        if not states.autoGlitch then continue end
+        local char = player.Character
+        if not char or not states.selectedRock or not states.selectedMethod then continue end
+        local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
+        if not root or not hum or hum.Health <= 0 then continue end
+        if states.isTransitioning then continue end
 
-            if states.autoGlitch and states.selectedRock and states.selectedMethod and not states.isTransitioning then
-                local rockModel = getRockInstance(states.selectedRock); if rockModel then
-                    local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart");
-                    if actualRockPart then
-                        local punchTool = player.Backpack:FindFirstChild("Punch") or char:FindFirstChild("Punch")
-                        if punchTool and punchTool.Parent ~= char then 
-                            pcall(function() punchTool.Parent = char end)
-                        end
+        local rockModel = getRockInstance(states.selectedRock)
+        if not rockModel then continue end
+        local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart")
+        if not actualRockPart then continue end
 
-                        if states.selectedMethod == "Teleport" then 
-                            if punchTool and punchTool:FindFirstChild("attackTime") then punchTool.attackTime.Value = 0.05 end
-                            local edgeOffset = (actualRockPart.Size.Z / 2) + 2.5 + ((tonumber(Config.SizeValue) or 1) * 0.25)
-                            root.CFrame = CFrame.lookAt((actualRockPart.CFrame * CFrame.new(0, 0, edgeOffset)).Position, actualRockPart.Position)
-                            if punchTool then
-                                punchTool:Activate()
-                            end
-                        elseif states.selectedMethod == "NonTeleport" then 
-                            local handPrefix = toggleHand and "Left" or "Right"
-                            local targetHand = char:FindFirstChild(handPrefix .. "Hand") or char:FindFirstChild(handPrefix .. " Arm")
-                            toggleHand = not toggleHand
-                            if targetHand then 
-                                local origPos = actualRockPart:FindFirstChild("originalPosition")
-                                if not rockCache[actualRockPart] then 
-                                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame, OrigPos = origPos and origPos.Value or nil} 
-                                end
-                                local mySize = player:FindFirstChild("customSize") and player.customSize.Value or tonumber(Config.SizeValue) or 1
-                                local newSize = (mySize >= 2) and 2 or 1
-                                actualRockPart.Size = Vector3.new(newSize, newSize, newSize)
-                                actualRockPart.CanCollide = false
-                                actualRockPart.CFrame = targetHand.CFrame
-                                if origPos and origPos:IsA("Vector3Value") then
-                                    if (origPos.Value - targetHand.Position).Magnitude > 0.1 then
-                                        origPos.Value = targetHand.Position
-                                    end
-                                end
-                            end
-                            pcall(function()
-                                local args1 = { [1] = "punch", [2] = "leftHand" }
-                                player.muscleEvent:FireServer(unpack(args1))
-                                local args2 = { [1] = "punch", [2] = "rightHand" }
-                                player.muscleEvent:FireServer(unpack(args2))
-                            end)
-                        end
-                        
-                        if states.autoGlitchTrain then 
-                            local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
-                            for _, tool in ipairs(char:GetChildren()) do 
-                                if tool:IsA("Tool") and allowed[tool.Name] then 
-                                    pcall(function() tool:Activate() end)
-                                end 
-                            end
-                        else 
-                            for _, tool in ipairs(char:GetChildren()) do 
-                                if tool:IsA("Tool") and tool.Name ~= "Punch" then 
-                                    pcall(function() tool.Parent = player.Backpack end)
-                                end 
-                            end
-                        end
+        local punchTool = player.Backpack:FindFirstChild("Punch") or char:FindFirstChild("Punch")
+        if punchTool and punchTool.Parent ~= char then 
+            pcall(function() punchTool.Parent = char end)
+        end
+
+        if states.selectedMethod == "Teleport" then 
+            if punchTool and punchTool:FindFirstChild("attackTime") then punchTool.attackTime.Value = 0.05 end
+            local edgeOffset = (actualRockPart.Size.Z / 2) + 2.5 + ((tonumber(Config.SizeValue) or 1) * 0.25)
+            root.CFrame = CFrame.lookAt((actualRockPart.CFrame * CFrame.new(0, 0, edgeOffset)).Position, actualRockPart.Position)
+            if punchTool then punchTool:Activate() end
+
+        elseif states.selectedMethod == "NonTeleport" then 
+            local handPrefix = toggleHand and "Left" or "Right"
+            local targetHand = char:FindFirstChild(handPrefix .. "Hand") or char:FindFirstChild(handPrefix .. " Arm")
+            toggleHand = not toggleHand
+            if targetHand then 
+                local origPos = actualRockPart:FindFirstChild("originalPosition")
+                if not rockCache[actualRockPart] then 
+                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame, OrigPos = origPos and origPos.Value or nil} 
+                end
+                local mySize = player:FindFirstChild("customSize") and player.customSize.Value or tonumber(Config.SizeValue) or 1
+                local newSize = (mySize >= 2) and 2 or 1
+                actualRockPart.Size = Vector3.new(newSize, newSize, newSize)
+                actualRockPart.CanCollide = false
+                actualRockPart.CFrame = targetHand.CFrame
+                if origPos and origPos:IsA("Vector3Value") then
+                    if (origPos.Value - targetHand.Position).Magnitude > 0.1 then
+                        origPos.Value = targetHand.Position
                     end
                 end
             end
+            pcall(function()
+                local args1 = { [1] = "punch", [2] = "leftHand" }
+                player.muscleEvent:FireServer(unpack(args1))
+                local args2 = { [1] = "punch", [2] = "rightHand" }
+                player.muscleEvent:FireServer(unpack(args2))
+            end)
+        end
 
-            -- KILL LOGIC (fixed exclusion)
+        if states.autoGlitchTrain then 
+            local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
+            for _, tool in ipairs(char:GetChildren()) do 
+                if tool:IsA("Tool") and allowed[tool.Name] then 
+                    pcall(function() tool:Activate() end)
+                end 
+            end
+        else 
+            for _, tool in ipairs(char:GetChildren()) do 
+                if tool:IsA("Tool") and tool.Name ~= "Punch" then 
+                    pcall(function() tool.Parent = player.Backpack end)
+                end 
+            end
+        end
+    end
+end))
+
+-- ================================
+-- KILL LOGIC (respects Less Lag)
+-- ================================
+table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
+    while true do
+        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        local char = player.Character; if not char then continue end
+        local root, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
+        if not root or not hum or hum.Health <= 0 then continue end
+
+        local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
+        if anyKillActive then
             local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
-            if anyKillActive and hand then 
+            if hand then 
                 for _, p in ipairs(Players:GetPlayers()) do 
                     if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                         local shouldKill = false
@@ -1045,6 +1053,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- Auto Chest
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoChest then
@@ -1058,6 +1067,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- Auto Lift No Anim
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function() 
     while true do 
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end 
@@ -1065,7 +1075,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end 
 end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO CLAIM GIFT
+-- Auto Claim Gift
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoClaim then
@@ -1078,7 +1088,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- SEPARATED 1 SECOND LOOP FOR AUTO FORTUNE WHEEL
+-- Auto Fortune Wheel
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do
         if states.autoFortuneWheel then
@@ -1093,6 +1103,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- Rebirth, Stats, View Player, Pet/Aura refresh
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait() do
         if states.autoRebirthInf then ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end
@@ -1170,6 +1181,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
+-- Player list refresh
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(1) do 
         local killList, statsList, currentMap = {}, {}, {}
@@ -1188,9 +1200,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- ================================================================
--- 10-MINUTE ANTI-AFK (RIGHT CLICK)
--- ================================================================
+-- Anti-AFK
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(600) do
         pcall(function()
@@ -1201,9 +1211,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- ================================================================
--- AUTO PUNCH / PERSISTENT BUFFS
--- ================================================================
+-- Fast Punch / Auto Punch / Accel Reps
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
@@ -1213,10 +1221,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         local p = getPunch()
         if p and p:FindFirstChild("attackTime") then
             local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
-            if states.fastPunch or anyKillActive or (states.autoGlitch and states.selectedMethod == "Teleport") then
+            if states.fastPunch or anyKillActive then
                 pcall(function() p.attackTime.Value = 0 end)
-            elseif states.autoGlitch and states.selectedMethod == "Teleport" then
-                pcall(function() p.attackTime.Value = 0.05 end)
             elseif not states.autoGlitch then
                 pcall(function() p.attackTime.Value = 0.35 end)
             end
