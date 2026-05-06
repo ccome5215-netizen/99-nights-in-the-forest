@@ -63,7 +63,9 @@ local states = {
     autoGoodKarma = false, autoEvilKarma = false, statsTarget = nil, trackStats = false,
     viewing = false, withoutFormatNum = false, autoChest = false, autoFortuneWheel = false,
     currentPetLabel = nil, currentPetTable = nil, currentAuraLabel = nil, currentAuraTable = nil,
-    lessLag = false
+    lessLag = false,
+    selectedMap = nil, selectedGym = nil, autoGym = false,
+    autoGymThread = nil
 }
 
 local rockCache = {}
@@ -85,6 +87,76 @@ local rockData = {
     ["Legend Rock"] = {req = 1000000, name = "Rock Of Legends", idx = 1},
     ["Muscle King Rock"] = {req = 5000000, name = "Muscle King Mountain", idx = 1},
     ["Jungle Rock"] = {req = 10000000, name = "Ancient Jungle Rock", idx = 1}
+}
+
+-- Gym data
+local gymData = {
+    ["Tiny Island"] = {
+        ["Bench Press"] = {pos = Vector3.new(67.105286, 6.714245, 1984.269043), cost = 10},
+        ["Medium Bench Press"] = {pos = Vector3.new(-144.733521, 7.551205, 1977.866211), cost = 150}
+    },
+    ["Beach"] = {
+        ["Deadlift"] = {pos = Vector3.new(137.632263, 3.314179, 94.581825), cost = 1500},
+        ["Medium Deadlift"] = {pos = Vector3.new(134.463394, 3.314179, 58.235218), cost = 2500},
+        ["Big Deadlift"] = {pos = Vector3.new(141.028931, 3.314180, 24.779715), cost = 4000},
+        ["Squat Rack"] = {pos = Vector3.new(239.955200, 3.314179, 97.715668), cost = 1000},
+        ["Medium Squat Rack"] = {pos = Vector3.new(236.428650, 3.314180, 62.278412), cost = 1500},
+        ["Big Bench Press"] = {pos = Vector3.new(-193.705612, 8.826573, 300.670166), cost = 400}
+    },
+    ["Legend Beach"] = {
+        ["Boulder Throw"] = {pos = Vector3.new(-85.060844, 7.303731, -297.216919), cost = 3000},
+        ["Medium Boulder Throw"] = {pos = Vector3.new(-73.385582, 18.023537, -366.033295), cost = 7500},
+        ["Huge Deadlift"] = {pos = Vector3.new(-69.451859, 38.819893, -491.074005), cost = 8000},
+        ["Big Boulder Throw"] = {pos = Vector3.new(56.436710, 28.062868, -281.883698), cost = 15000},
+        ["Huge Boulder Throw"] = {pos = Vector3.new(38.193623, 43.351215, -408.763794), cost = 25000},
+        ["Big Bench Press"] = {pos = Vector3.new(194.909180, 12.640547, -314.712921), cost = 3000},
+        ["Huge Bench Press"] = {pos = Vector3.new(198.874435, 20.215279, -374.683929), cost = 4000},
+        ["Very Big Bench Press"] = {pos = Vector3.new(475.157410, 24.176254, -259.730591), cost = 10000},
+        ["Very Huge Bench Press"] = {pos = Vector3.new(463.311310, 29.884830, -327.976959), cost = 15000}
+    },
+    ["Frozen Island"] = {
+        ["Frozen Press"] = {pos = Vector3.new(-2604.636475, 10.087743, -177.873322), cost = 1000},
+        ["Medium Frozen Press"] = {pos = Vector3.new(-2750.141846, 16.310598, -185.355408), cost = 3000},
+        ["Big Frozen Press"] = {pos = Vector3.new(-3022.960938, 41.478535, -201.070541), cost = 7500},
+        ["Huge Frozen Press"] = {pos = Vector3.new(-3004.811035, 49.862091, -341.377167), cost = 15000},
+        ["Deadlift"] = {pos = Vector3.new(-2917.706543, 42.641796, -210.984131), cost = 5000},
+        ["Frozen Squat"] = {pos = Vector3.new(-2626.900146, 20.156042, -606.871155), cost = 4000},
+        ["Medium Frozen Squat"] = {pos = Vector3.new(-2721.806885, 30.932962, -590.231323), cost = 10000}
+    },
+    ["Mystic Island"] = {
+        ["Mystic Pullup"] = {pos = Vector3.new(2259.983643, 21.162369, 838.979309), cost = 4000},
+        ["Medium Mystic Pullup"] = {pos = Vector3.new(2486.551025, 35.004158, 849.089417), cost = 8000},
+        ["Mystic Press"] = {pos = Vector3.new(2368.526367, 57.047935, 1242.839111), cost = 15000},
+        ["Mystic Throw"] = {pos = Vector3.new(2490.968506, 34.769260, 1240.426147), cost = 10000},
+        ["Medium Mystic Throw"] = {pos = Vector3.new(2575.198730, 48.729973, 1220.895142), cost = 18000},
+        ["Huge Mystic Throw"] = {pos = Vector3.new(2664.394287, 57.635010, 1204.904785), cost = 25000}
+    },
+    ["Inferno Island"] = {
+        ["Eternal Press"] = {pos = Vector3.new(-7171.678223, 70.458687, -1100.657837), cost = 15000}
+    },
+    ["Legend Island"] = {
+        ["Legend Lift"] = {pos = Vector3.new(4528.977539, 1027.182007, -4007.151367)},
+        ["Legend Squat"] = {pos = Vector3.new(4438.002930, 1021.915283, -4058.800537)},
+        ["Legend Pullup"] = {pos = Vector3.new(4306.121094, 1024.362549, -4121.852539)},
+        ["Legend Press"] = {pos = Vector3.new(4111.515137, 1041.059570, -3799.606445)},
+        ["Legend Throw"] = {pos = Vector3.new(4256.106934, 1008.502441, -3624.105713)},
+        ["Medium Legend Throw"] = {pos = Vector3.new(4184.614746, 1025.216309, -3904.958008)}
+    },
+    ["Muscle King Island"] = {
+        ["Muscle King Lift"] = {pos = Vector3.new(-8773.583984, 48.473736, -5661.329590)},
+        ["Muscle King Throw"] = {pos = Vector3.new(-8945.077148, 63.497959, -5693.013672)},
+        ["Muscle King Squat"] = {pos = Vector3.new(-8756.472656, 43.382732, -6044.728027)},
+        ["Muscle King Press"] = {pos = Vector3.new(-8591.196289, 62.720314, -6043.746094)}
+    },
+    ["Jungle Island"] = {
+        ["Jungle Bench"] = {pos = Vector3.new(-8627.859375, 50.873047, 1893.214722), cost = 25000},
+        ["Medium Jungle Bench"] = {pos = Vector3.new(-8430.405273, 76.713478, 1903.381836), cost = 50000},
+        ["Big Jungle Bench"] = {pos = Vector3.new(-8174.530273, 92.738068, 1916.532837), cost = 100000},
+        ["Jungle Bar Lift"] = {pos = Vector3.new(-8654.461914, 42.706390, 2086.785400), cost = 100000},
+        ["Jungle Boulder"] = {pos = Vector3.new(-8617.403320, 51.352287, 2677.590576), cost = 75000},
+        ["Jungle Squat"] = {pos = Vector3.new(-8581.711914, 36.457954, 2885.841797), cost = 50000},
+        ["Medium Jungle Squat"] = {pos = Vector3.new(-8375.843750, 56.552425, 2863.896729), cost = 125000}
+    }
 }
 
 ----------------------------------------------------------------
@@ -147,7 +219,7 @@ end
 
 local function ServerHop(targetType)
     local sortOrder = targetType == "Small" and "Asc" or "Desc"
-    local url = "https://games.roproxy.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=" .. sortOrder .. "&limit=100"
+    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=" .. sortOrder .. "&limit=100"
     local success, result = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
     if success and result and result.data then
         for _, server in ipairs(result.data) do
@@ -186,6 +258,107 @@ local function handleGlitchCleanup(method, callback)
         end)
     else
         if callback then callback() end
+    end
+end
+
+-- Fire E key
+local function fireEKey()
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+        task.wait(0.1)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+    end)
+end
+
+-- Check if local player is current Muscle King
+local function isLocalPlayerMuscleKing()
+    local mkPart = workspace:FindFirstChild("currentMuscleKingPart")
+    if not mkPart then return false end
+    local mkGui = mkPart:FindFirstChild("currentMuscleKingGui")
+    if not mkGui then return false end
+    local mkLabel = mkGui:FindFirstChild("currentMuscleKingLabel")
+    if not mkLabel or not mkLabel:IsA("TextLabel") then return false end
+    return mkLabel.Text == "Muscle King: " .. player.Name
+end
+
+-- Get strength
+local function getStrength()
+    return player.leaderstats and player.leaderstats:FindFirstChild("Strength") and player.leaderstats.Strength.Value or 0
+end
+
+-- Stop auto gym
+local function stopAutoGym()
+    if states.autoGymThread then
+        pcall(task.cancel, states.autoGymThread)
+        states.autoGymThread = nil
+    end
+    states.autoGym = false
+end
+
+-- Start auto gym (now includes looping teleport + E key)
+local function startAutoGym()
+    stopAutoGym()
+    if not states.selectedMap or not states.selectedGym then return end
+    states.autoGym = true
+    states.autoGymThread = task.spawn(function()
+        while states.autoGym and states.selectedMap and states.selectedGym do
+            local map = gymData[states.selectedMap]
+            if not map then break end
+            local gym = map[states.selectedGym]
+            if not gym then break end
+
+            -- Strength check
+            local cost = gym.cost
+            if cost then
+                if getStrength() < cost then
+                    if states.lessLag then task.wait(0.5) else task.wait(0.1) end
+                    continue
+                end
+            end
+
+            -- Muscle King check
+            if states.selectedMap == "Muscle King Island" and not isLocalPlayerMuscleKing() then
+                if states.lessLag then task.wait(0.5) else task.wait(0.1) end
+                continue
+            end
+
+            local chr = player.Character
+            if not chr or not chr:FindFirstChild("HumanoidRootPart") then
+                task.wait(0.2)
+                continue
+            end
+            local root = chr.HumanoidRootPart
+            local hum = chr:FindFirstChild("Humanoid")
+            if not hum or hum.Health <= 0 then
+                task.wait(0.2)
+                continue
+            end
+
+            -- Teleport to gym
+            root.CFrame = CFrame.new(gym.pos)
+            root.AssemblyLinearVelocity = Vector3.zero
+            fireEKey()
+
+            -- Wait until sitting
+            local sitWait = 0
+            while states.autoGym and states.selectedGym == gym and sitWait < 5 do
+                if chr:FindFirstChild("Seat") or (hum and hum.Sit) then break end
+                task.wait(0.2)
+                sitWait = sitWait + 0.2
+            end
+
+            task.wait(0.5)
+        end
+        states.autoGym = false
+    end)
+end
+
+-- Toggle auto gym (from button)
+local function toggleAutoGym()
+    if states.autoGym then
+        stopAutoGym()
+    else
+        startAutoGym()
     end
 end
 
@@ -240,12 +413,12 @@ TabContainer.Position = UDim2.fromOffset(0, 30)
 TabContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 
 local frames = {}
-local tabs = {"Auto Farm", "Farm", "Killer", "Stats"}
+local tabs = {"Auto Farm", "Farm", "Killer", "Stats", "Auto Gym"}
 
 for i, tName in ipairs(tabs) do
     local btn = Instance.new("TextButton", TabContainer)
-    btn.Size = UDim2.new(0.25, 0, 1, 0)
-    btn.Position = UDim2.new((i-1)*0.25, 0, 0, 0)
+    btn.Size = UDim2.new(0.2, 0, 1, 0)
+    btn.Position = UDim2.new((i-1)*0.2, 0, 0, 0)
     btn.Text = tName
     btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     btn.TextColor3 = Color3.new(1, 1, 1)
@@ -321,15 +494,6 @@ local function createDropdown(parent, text, options, multi, callback, checkState
     
     local function refresh(newOpts)
         if newOpts then
-            local isSame = true
-            if #newOpts == #options then
-                for idx, val in ipairs(newOpts) do
-                    if val ~= options[idx] then isSame = false break end
-                end
-            else
-                isSame = false
-            end
-            if isSame and #list:GetChildren() > 0 then return end
             options = newOpts
         end
         for _, v in ipairs(list:GetChildren()) do v:Destroy() end
@@ -374,10 +538,9 @@ end
 local lockPosBtn, autoRebirthTargetBtn, autoRebirthInfBtn, trackBtn
 
 ----------------------------------------------------------------
--- KILL VISIBILITY UTILITY (removed)
+-- KILL VISIBILITY (removed)
 ----------------------------------------------------------------
 local function updateVisibility(isInvisible) end
-
 local function checkResetKillAttackTime()
     if not states.killActive and not states.killEveryone and not states.autoGoodKarma and not states.autoEvilKarma then
         local pnc = getPunch()
@@ -526,9 +689,7 @@ createToggle(f2, "Fly", function(v)
     if not v and player.Character and player.Character:FindFirstChild("Humanoid") then player.Character.Humanoid.PlatformStand = false end
 end)
 
-local godModeBtn = createToggle(f2, "God Mode", function(v) 
-    states.godMode = v 
-end)
+createToggle(f2, "God Mode", function(v) states.godMode = v end)
 
 local copyPosBtn = Instance.new("TextButton", f2)
 copyPosBtn.Size = UDim2.new(1, -10, 0, 35); copyPosBtn.Text = "Copy My Position"; copyPosBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 60); copyPosBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -631,27 +792,17 @@ local function clearPetAuraUI()
     if petDetails then petDetails.Text = "Select a Pet to view stats" end
     if auraDetails then auraDetails.Text = "Select an Aura to view stats" end
     
-    if basicDD then basicDD.refresh({"Nothing Here"});
-    basicDD.setHeaderText("Basic Pets v") end
-    if advDD then advDD.refresh({"Nothing Here"});
-    advDD.setHeaderText("Advance Pets v") end
-    if rareDD then rareDD.refresh({"Nothing Here"});
-    rareDD.setHeaderText("Rare Pets v") end
-    if epicDD then epicDD.refresh({"Nothing Here"});
-    epicDD.setHeaderText("Epic Pets v") end
-    if uniqueDD then uniqueDD.refresh({"Nothing Here"});
-    uniqueDD.setHeaderText("Unique Pets v") end
+    if basicDD then basicDD.refresh({"Nothing Here"}); basicDD.setHeaderText("Basic Pets v") end
+    if advDD then advDD.refresh({"Nothing Here"}); advDD.setHeaderText("Advance Pets v") end
+    if rareDD then rareDD.refresh({"Nothing Here"}); rareDD.setHeaderText("Rare Pets v") end
+    if epicDD then epicDD.refresh({"Nothing Here"}); epicDD.setHeaderText("Epic Pets v") end
+    if uniqueDD then uniqueDD.refresh({"Nothing Here"}); uniqueDD.setHeaderText("Unique Pets v") end
 
-    if auraBasicDD then auraBasicDD.refresh({"Nothing Here"});
-    auraBasicDD.setHeaderText("Basic Auras v") end
-    if auraAdvDD then auraAdvDD.refresh({"Nothing Here"});
-    auraAdvDD.setHeaderText("Advance Auras v") end
-    if auraRareDD then auraRareDD.refresh({"Nothing Here"});
-    auraRareDD.setHeaderText("Rare Auras v") end
-    if auraEpicDD then auraEpicDD.refresh({"Nothing Here"});
-    auraEpicDD.setHeaderText("Epic Auras v") end
-    if auraUniqueDD then auraUniqueDD.refresh({"Nothing Here"});
-    auraUniqueDD.setHeaderText("Unique Auras v") end
+    if auraBasicDD then auraBasicDD.refresh({"Nothing Here"}); auraBasicDD.setHeaderText("Basic Auras v") end
+    if auraAdvDD then auraAdvDD.refresh({"Nothing Here"}); auraAdvDD.setHeaderText("Advance Auras v") end
+    if auraRareDD then auraRareDD.refresh({"Nothing Here"}); auraRareDD.setHeaderText("Rare Auras v") end
+    if auraEpicDD then auraEpicDD.refresh({"Nothing Here"}); auraEpicDD.setHeaderText("Epic Auras v") end
+    if auraUniqueDD then auraUniqueDD.refresh({"Nothing Here"}); auraUniqueDD.setHeaderText("Unique Auras v") end
 end
 
 local function resetStatsUI()
@@ -669,8 +820,7 @@ statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label)
     local newTarget = nameMap[label] or label
     if states.statsTarget ~= newTarget then 
         states.statsTarget = newTarget
-        lastStatValues = {}; 
-        statGains = {}; statGainTimes = {}
+        lastStatValues = {}; statGains = {}; statGainTimes = {}
         statsPlayerDD.setHeaderText(label .. " v")
         states.trackStats = false
         if trackBtn then trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end 
@@ -679,28 +829,18 @@ statsPlayerDD = createDropdown(f4, "Player Dropdown", {}, false, function(label)
         local tp = Players:FindFirstChild(newTarget)
         if tp then
             local petsF = tp:FindFirstChild("petsFolder")
-            local oB, rB = processSpecificFolderItems(petsF and petsF:FindFirstChild("Basic"));
-            petRefsBasic = rB; basicDD.refresh(oB)
-            local oA, rA = processSpecificFolderItems(petsF and petsF:FindFirstChild("Advanced"));
-            petRefsAdv = rA; advDD.refresh(oA)
-            local oR, rR = processSpecificFolderItems(petsF and petsF:FindFirstChild("Rare"));
-            petRefsRare = rR; rareDD.refresh(oR)
-            local oE, rE = processSpecificFolderItems(petsF and petsF:FindFirstChild("Epic"));
-            petRefsEpic = rE; epicDD.refresh(oE)
-            local oU, rU = processSpecificFolderItems(petsF and petsF:FindFirstChild("Unique"));
-            petRefsUnique = rU; uniqueDD.refresh(oU)
+            local oB, rB = processSpecificFolderItems(petsF and petsF:FindFirstChild("Basic")); petRefsBasic = rB; basicDD.refresh(oB)
+            local oA, rA = processSpecificFolderItems(petsF and petsF:FindFirstChild("Advanced")); petRefsAdv = rA; advDD.refresh(oA)
+            local oR, rR = processSpecificFolderItems(petsF and petsF:FindFirstChild("Rare")); petRefsRare = rR; rareDD.refresh(oR)
+            local oE, rE = processSpecificFolderItems(petsF and petsF:FindFirstChild("Epic")); petRefsEpic = rE; epicDD.refresh(oE)
+            local oU, rU = processSpecificFolderItems(petsF and petsF:FindFirstChild("Unique")); petRefsUnique = rU; uniqueDD.refresh(oU)
             
             local powerUpsF = tp:FindFirstChild("powerUpsFolder")
-            local oAB, rAB = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Basic"));
-            auraRefsBasic = rAB; auraBasicDD.refresh(oAB)
-            local oAA, rAA = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Advanced"));
-            auraRefsAdv = rAA; auraAdvDD.refresh(oAA)
-            local oAR, rAR = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Rare"));
-            auraRefsRare = rAR; auraRareDD.refresh(oAR)
-            local oAE, rAE = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Epic"));
-            auraRefsEpic = rAE; auraEpicDD.refresh(oAE)
-            local oAU, rAU = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Unique"));
-            auraRefsUnique = rAU; auraUniqueDD.refresh(oAU)
+            local oAB, rAB = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Basic")); auraRefsBasic = rAB; auraBasicDD.refresh(oAB)
+            local oAA, rAA = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Advanced")); auraRefsAdv = rAA; auraAdvDD.refresh(oAA)
+            local oAR, rAR = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Rare")); auraRefsRare = rAR; auraRareDD.refresh(oAR)
+            local oAE, rAE = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Epic")); auraRefsEpic = rAE; auraEpicDD.refresh(oAE)
+            local oAU, rAU = processAuraItems(powerUpsF and powerUpsF:FindFirstChild("Unique")); auraRefsUnique = rAU; auraUniqueDD.refresh(oAU)
         end
     end 
 end)
@@ -708,15 +848,13 @@ end)
 Players.PlayerRemoving:Connect(function(plr) if states.statsTarget == plr.Name then resetStatsUI() end end)
 
 trackBtn = Instance.new("TextButton", f4)
-trackBtn.Size = UDim2.new(1, -10, 0, 30);
-trackBtn.Text = "Track Stats"; trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50); trackBtn.TextColor3 = Color3.new(1, 1, 1)
+trackBtn.Size = UDim2.new(1, -10, 0, 30); trackBtn.Text = "Track Stats"; trackBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50); trackBtn.TextColor3 = Color3.new(1, 1, 1)
 trackBtn.MouseButton1Click:Connect(function() if states.statsTarget then states.trackStats = true; trackBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 150) end end)
 
 createToggle(f4, "Without Format Number", function(v) states.withoutFormatNum = v end)
 
 local tpToPlayerBtn = Instance.new("TextButton", f4)
-tpToPlayerBtn.Size = UDim2.new(1, -10, 0, 30);
-tpToPlayerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60); tpToPlayerBtn.Text = "Teleport Player"; tpToPlayerBtn.TextColor3 = Color3.new(1, 1, 1)
+tpToPlayerBtn.Size = UDim2.new(1, -10, 0, 30); tpToPlayerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60); tpToPlayerBtn.Text = "Teleport Player"; tpToPlayerBtn.TextColor3 = Color3.new(1, 1, 1)
 tpToPlayerBtn.MouseButton1Click:Connect(function() if states.statsTarget then local tp = Players:FindFirstChild(states.statsTarget); if tp and tp.Character and tp.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = tp.Character.HumanoidRootPart.CFrame end end end)
 
 local statNamesList = {"Strength", "Durability", "Agility", "Rebirth", "Rebirth Multiplier", "Brawl", "Kill", "Gems", "Brawl Kill", "Size", "Speed", "Good Karma", "Evil Karma", "Auto Lift", "Muscle King Time", "Save Size", "Save Speed", "Current Map"}
@@ -755,18 +893,79 @@ auraEpicDD = createDropdown(f4, "Epic Auras", {"Nothing Here"}, false, function(
 auraUniqueDD = createDropdown(f4, "Unique Auras", {"Nothing Here"}, false, function(l) states.currentAuraLabel = l; states.currentAuraTable = "Unique";
 handleAuraSelection(l, auraRefsUnique, auraDetails) end)
 
-local ultHeader = Instance.new("TextLabel", f4); ultHeader.Size = UDim2.new(1, -10, 0, 20); ultHeader.Text = "--- ULTIMATES ---";
-ultHeader.BackgroundTransparency = 1; ultHeader.TextColor3 = Color3.fromRGB(0, 200, 200); ultHeader.Font = Enum.Font.SourceSansBold; ultHeader.TextXAlignment = Enum.TextXAlignment.Left
-local ultList = Instance.new("TextLabel", f4);
-ultList.Size = UDim2.new(1, -10, 0, 250); ultList.BackgroundTransparency = 1; ultList.TextColor3 = Color3.new(1, 1, 1); ultList.TextXAlignment = Enum.TextXAlignment.Left; ultList.TextYAlignment = Enum.TextYAlignment.Top;
-ultList.Text = "None"; ultList.TextWrapped = true; ultList.AutomaticSize = Enum.AutomaticSize.Y
+local ultHeader = Instance.new("TextLabel", f4); ultHeader.Size = UDim2.new(1, -10, 0, 20); ultHeader.Text = "--- ULTIMATES ---"; ultHeader.BackgroundTransparency = 1; ultHeader.TextColor3 = Color3.fromRGB(0, 200, 200); ultHeader.Font = Enum.Font.SourceSansBold; ultHeader.TextXAlignment = Enum.TextXAlignment.Left
+local ultList = Instance.new("TextLabel", f4); ultList.Size = UDim2.new(1, -10, 0, 250); ultList.BackgroundTransparency = 1; ultList.TextColor3 = Color3.new(1, 1, 1); ultList.TextXAlignment = Enum.TextXAlignment.Left; ultList.TextYAlignment = Enum.TextYAlignment.Top; ultList.Text = "None"; ultList.TextWrapped = true; ultList.AutomaticSize = Enum.AutomaticSize.Y
 
-local gpHeader = Instance.new("TextLabel", f4); gpHeader.Size = UDim2.new(1, -10, 0, 20);
-gpHeader.Text = "--- GAMEPASSES ---"; gpHeader.BackgroundTransparency = 1; gpHeader.TextColor3 = Color3.fromRGB(0, 200, 100); gpHeader.Font = Enum.Font.SourceSansBold;
-gpHeader.TextXAlignment = Enum.TextXAlignment.Left
-local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0, 200); gpList.BackgroundTransparency = 1;
-gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlignment.Left; gpList.TextYAlignment = Enum.TextYAlignment.Top; gpList.Text = "None"; gpList.TextWrapped = true;
-gpList.AutomaticSize = Enum.AutomaticSize.Y
+local gpHeader = Instance.new("TextLabel", f4); gpHeader.Size = UDim2.new(1, -10, 0, 20); gpHeader.Text = "--- GAMEPASSES ---"; gpHeader.BackgroundTransparency = 1; gpHeader.TextColor3 = Color3.fromRGB(0, 200, 100); gpHeader.Font = Enum.Font.SourceSansBold; gpHeader.TextXAlignment = Enum.TextXAlignment.Left
+local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0, 200); gpList.BackgroundTransparency = 1; gpList.TextColor3 = Color3.new(1, 1, 1); gpList.TextXAlignment = Enum.TextXAlignment.Left; gpList.TextYAlignment = Enum.TextYAlignment.Top; gpList.Text = "None"; gpList.TextWrapped = true; gpList.AutomaticSize = Enum.AutomaticSize.Y
+
+----------------------------------------------------------------
+-- TAB 5: AUTO GYM
+----------------------------------------------------------------
+local f5 = frames["Auto Gym"]
+
+-- Map dropdown
+local mapDD
+mapDD = createDropdown(f5, "Select Map", {"Tiny Island", "Beach", "Legend Beach", "Frozen Island", "Mystic Island", "Inferno Island", "Legend Island", "Muscle King Island", "Jungle Island"}, false, function(map)
+    states.selectedMap = map
+    states.selectedGym = nil
+    -- Build gym list with cost strings
+    local gymOptions = {}
+    local data = gymData[map]
+    if data then
+        for name, info in pairs(data) do
+            local costStr = info.cost and (" (" .. formatNum(info.cost) .. " Str)") or ""
+            table.insert(gymOptions, name .. costStr)
+        end
+        if #gymOptions == 0 then
+            table.insert(gymOptions, "No gyms available")
+        end
+    else
+        table.insert(gymOptions, "No gyms available")
+    end
+    gymDD.refresh(gymOptions)
+    gymDD.setHeaderText("Select Gym v")
+end)
+
+-- Gym dropdown
+local gymDD
+gymDD = createDropdown(f5, "Select Gym", {"Select map first"}, false, function(gymName)
+    if not states.selectedMap then return end
+    -- Extract real gym name (strip cost)
+    local realName = gymName:gsub(" %(.*%)", "")
+    states.selectedGym = realName
+end)
+
+-- Gym button (one-time)
+local gymBtn = Instance.new("TextButton", f5)
+gymBtn.Size = UDim2.new(1, -10, 0, 35)
+gymBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
+gymBtn.Text = "Gym"
+gymBtn.TextColor3 = Color3.new(1, 1, 1)
+gymBtn.MouseButton1Click:Connect(function()
+    if not states.selectedMap or not states.selectedGym then return end
+    local gym = gymData[states.selectedMap][states.selectedGym]
+    if not gym then return end
+    local cost = gym.cost
+    if cost and getStrength() < cost then return end
+    if states.selectedMap == "Muscle King Island" and not isLocalPlayerMuscleKing() then return end
+    local chr = player.Character
+    if not chr or not chr:FindFirstChild("HumanoidRootPart") then return end
+    chr.HumanoidRootPart.CFrame = CFrame.new(gym.pos)
+    chr.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+    fireEKey()
+end)
+
+-- Auto Gym toggle (now includes continuous repeat)
+local autoGymBtn = createToggle(f5, "Auto Gym", function(val)
+    if val then
+        if not states.selectedMap or not states.selectedGym then return false end
+        startAutoGym()
+    else
+        stopAutoGym()
+    end
+    return val
+end)
 
 ----------------------------------------------------------------
 -- MAIN LOOPS
@@ -798,8 +997,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 if not states.flyBody or not states.flyBody.Velocity.Parent then
                     states.flyBody = {};
                     local bv = Instance.new("BodyVelocity", root); bv.MaxForce, bv.Velocity = Vector3.new(math.huge, math.huge, math.huge), Vector3.zero
-                    local bg = Instance.new("BodyGyro", root);
-                    bg.MaxTorque, bg.CFrame = Vector3.new(math.huge, math.huge, math.huge), root.CFrame
+                    local bg = Instance.new("BodyGyro", root); bg.MaxTorque, bg.CFrame = Vector3.new(math.huge, math.huge, math.huge), root.CFrame
                     states.flyBody.Velocity, states.flyBody.Gyro = bv, bg
                 end
                 local speed, cam = tonumber(Config.FlySpeed) or 50, workspace.CurrentCamera
@@ -825,8 +1023,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     end
                 end
             end
-            if not states.autoMuscleKing and not states.lockedPos then if states.godMode then if states.lastSafePos and (root.Position - states.lastSafePos.Position).Magnitude > 150 then root.CFrame = states.lastSafePos;
-            root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero else states.lastSafePos = root.CFrame end else states.lastSafePos = root.CFrame end end
+            if not states.autoMuscleKing and not states.lockedPos then if states.godMode then if states.lastSafePos and (root.Position - states.lastSafePos.Position).Magnitude > 150 then root.CFrame = states.lastSafePos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero else states.lastSafePos = root.CFrame end else states.lastSafePos = root.CFrame end end
         end
     end
 end))
@@ -941,7 +1138,7 @@ end))
 -- ================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        task.wait()  -- yields once per frame, no delay, never blocked by Less Lag
+        task.wait()
         if not states.autoGlitch then continue end
         local char = player.Character
         if not char or not states.selectedRock or not states.selectedMethod then continue end
@@ -993,14 +1190,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             end)
         end
 
-        if states.autoGlitchTrain then 
-            local allowed = {["Weight"]=true, ["Handstands"]=true, ["Situps"]=true, ["Pushups"]=true}
-            for _, tool in ipairs(char:GetChildren()) do 
-                if tool:IsA("Tool") and allowed[tool.Name] then 
-                    pcall(function() tool:Activate() end)
-                end 
-            end
-        else 
+        -- Auto Glitch While Training: does NOT activate tools, just prevents unequipping
+        if not states.autoGlitchTrain then 
             for _, tool in ipairs(char:GetChildren()) do 
                 if tool:IsA("Tool") and tool.Name ~= "Punch" then 
                     pcall(function() tool.Parent = player.Backpack end)
@@ -1011,7 +1202,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 end))
 
 -- ================================
--- KILL LOGIC (respects Less Lag)
+-- KILL LOGIC (respects Less Lag) – ONLY TELEPORT TORSO
 -- ================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
@@ -1034,14 +1225,14 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                         end
                         
                         if shouldKill and not states.whitelist[p.Name] then 
-                            for _, part in ipairs(p.Character:GetDescendants()) do
-                                if part:IsA("BasePart") and not part.Name:lower():match("hand") and not part.Name:lower():match("arm") then
-                                    pcall(function()
-                                        part.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
-                                        part.AssemblyLinearVelocity = Vector3.zero
-                                        part.AssemblyAngularVelocity = Vector3.zero
-                                    end)
-                                end
+                            -- Only teleport torso (R15 UpperTorso, fallback to Torso)
+                            local torso = p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso")
+                            if torso and torso:IsA("BasePart") then
+                                pcall(function()
+                                    torso.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
+                                    torso.AssemblyLinearVelocity = Vector3.zero
+                                    torso.AssemblyAngularVelocity = Vector3.zero
+                                end)
                             end
                             local punchTool = char:FindFirstChild("Punch") or player.Backpack:FindFirstChild("Punch")
                             if punchTool then pcall(function() punchTool:Activate() end) end
@@ -1128,14 +1319,10 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     elseif s == "Good Karma" then rawVal = tp:FindFirstChild("goodKarma") and tp.goodKarma.Value or 0 
                     elseif s == "Muscle King Time" then rawVal = tp:FindFirstChild("muscleKingTime") and tp.muscleKingTime.Value or 0 
                     elseif s == "Rebirth Multiplier" then rawVal = tp:FindFirstChild("rebirthMultiplier") and tp.rebirthMultiplier.Value or 0 
-                    elseif s == "Auto Lift" then rawVal = tp:FindFirstChild("autoLiftEnabled") and tp.autoLiftEnabled.Value or false;
-                        isBool = true 
-                    elseif s == "Save Size" then rawVal = tp:FindFirstChild("saveSizePlayerValue") and tp.saveSizePlayerValue.Value or false;
-                        isBool = true 
-                    elseif s == "Save Speed" then rawVal = tp:FindFirstChild("saveSpeedPlayerValue") and tp.saveSpeedPlayerValue.Value or false;
-                        isBool = true 
-                    elseif s == "Current Map" then rawVal = tp:FindFirstChild("currentMap") and tp.currentMap.Value or "None";
-                        isBool = true 
+                    elseif s == "Auto Lift" then rawVal = tp:FindFirstChild("autoLiftEnabled") and tp.autoLiftEnabled.Value or false; isBool = true 
+                    elseif s == "Save Size" then rawVal = tp:FindFirstChild("saveSizePlayerValue") and tp.saveSizePlayerValue.Value or false; isBool = true 
+                    elseif s == "Save Speed" then rawVal = tp:FindFirstChild("saveSpeedPlayerValue") and tp.saveSpeedPlayerValue.Value or false; isBool = true 
+                    elseif s == "Current Map" then rawVal = tp:FindFirstChild("currentMap") and tp.currentMap.Value or "None"; isBool = true 
                     elseif s == "Rebirth" then rawVal = ls and ls:FindFirstChild("Rebirths") and ls.Rebirths.Value or 0 
                     else 
                         if ls and ls:FindFirstChild(s) then rawVal = ls[s].Value elseif tp:FindFirstChild(s) then rawVal = tp[s].Value end 
