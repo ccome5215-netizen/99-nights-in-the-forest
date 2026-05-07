@@ -175,9 +175,10 @@ local function getRockInstance(configName)
 end
 
 local function getPunch()
-    local backpack = player:FindFirstChild("Backpack")
-    local punchInBackpack = backpack and backpack:FindFirstChild("Punch")
-    return punchInBackpack or (player.Character and player.Character:FindFirstChild("Punch"))
+    local bp = player:FindFirstChild("Backpack")
+    local p = bp and bp:FindFirstChild("Punch")
+    if not p and player.Character then p = player.Character:FindFirstChild("Punch") end
+    return p
 end
 
 local function formatNum(n)
@@ -248,8 +249,6 @@ local function handleGlitchCleanup(method, callback)
             for rock, data in pairs(rockCache) do
                 if rock and rock.Parent then
                     rock.Size = data.Size; rock.CanCollide = data.CanCollide; rock.CFrame = data.CFrame
-                    local origPos = rock:FindFirstChild("originalPosition")
-                    if origPos and data.OrigPos then origPos.Value = data.OrigPos end
                 end
             end
             table.clear(rockCache)
@@ -295,7 +294,7 @@ local function stopAutoGym()
     states.autoGym = false
 end
 
--- Start auto gym (now includes looping teleport + E key)
+-- Start auto gym
 local function startAutoGym()
     stopAutoGym()
     if not states.selectedMap or not states.selectedGym then return end
@@ -331,6 +330,12 @@ local function startAutoGym()
             local hum = chr:FindFirstChild("Humanoid")
             if not hum or hum.Health <= 0 then
                 task.wait(0.2)
+                continue
+            end
+            
+            -- Ignore/Do nothing if character is already sitting
+            if hum.Sit then
+                task.wait(0.5)
                 continue
             end
 
@@ -428,7 +433,8 @@ for i, tName in ipairs(tabs) do
     f.Position = UDim2.fromOffset(5, 65)
     f.BackgroundTransparency = 1
     f.Visible = (i == 1)
-    f.CanvasSize = UDim2.new(0, 0, 0, 2200)
+    f.CanvasSize = UDim2.new(0, 0, 0, 0)
+    f.AutomaticCanvasSize = Enum.AutomaticSize.Y
     f.ScrollBarThickness = 2
     
     local layout = Instance.new("UIListLayout", f)
@@ -471,11 +477,20 @@ local function createDropdown(parent, text, options, multi, callback, checkState
     local container = Instance.new("Frame", parent)
     container.Size = UDim2.new(1, -10, 0, 30)
     container.BackgroundTransparency = 1
-    local header = Instance.new("TextButton", container)
-    header.Size = UDim2.new(1, 0, 0, 30)
-    header.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    header.Text = text .. " v"
-    header.TextColor3 = Color3.new(1, 1, 1)
+    
+    local headerText = Instance.new("TextLabel", container)
+    headerText.Size = UDim2.new(1, 0, 0, 30)
+    headerText.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    headerText.Text = text .. " v"
+    headerText.TextColor3 = Color3.new(1, 1, 1)
+    headerText.Active = true
+    
+    -- Hidden button overlay for click detection on the header
+    local headerBtn = Instance.new("TextButton", container)
+    headerBtn.Size = UDim2.new(1, 0, 0, 30)
+    headerBtn.BackgroundTransparency = 1
+    headerBtn.Text = ""
+    headerBtn.ZIndex = 12
     
     local list = Instance.new("ScrollingFrame", container)
     list.Position = UDim2.fromOffset(0, 30)
@@ -484,7 +499,7 @@ local function createDropdown(parent, text, options, multi, callback, checkState
     list.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     list.ScrollBarThickness = 4
     
-    header.MouseButton1Click:Connect(function()
+    headerBtn.MouseButton1Click:Connect(function()
         list.Visible = not list.Visible
         local listHeight = math.min(#options * 25, 150)
         container.Size = list.Visible and UDim2.new(1, -10, 0, listHeight + 30) or UDim2.new(1, -10, 0, 30)
@@ -514,7 +529,7 @@ local function createDropdown(parent, text, options, multi, callback, checkState
 
             o.MouseButton1Click:Connect(function()
                 if not multi then
-                    header.Text = tostring(opt) .. " v"
+                    headerText.Text = tostring(opt) .. " v"
                     list.Visible = false
                     container.Size = UDim2.new(1, -10, 0, 30)
                     callback(opt)
@@ -532,7 +547,7 @@ local function createDropdown(parent, text, options, multi, callback, checkState
         list.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
     end
     refresh()
-    return { refresh = refresh, setHeaderText = function(txt) header.Text = txt end, header = header }
+    return { refresh = refresh, setHeaderText = function(txt) headerText.Text = txt end }
 end
 
 local lockPosBtn, autoRebirthTargetBtn, autoRebirthInfBtn, trackBtn
@@ -646,7 +661,7 @@ createToggle(f1, "Auto Muscle King", function(val) states.autoMuscleKing = val; 
 createToggle(f1, "Auto Claim Gift", function(v) states.autoClaim = v end)
 createToggle(f1, "Auto Open Chest", function(v) states.autoChest = v end)
 createToggle(f1, "Auto Punch", function(v) states.autoPunch = v end)
-createToggle(f1, "Auto Fortune Wheel", function(v) states.autoFortuneWheel = v end)
+createToggle(f1, "Auto Fortune Wheel", function(v) states.autoFortune Wheel = v end)
 createToggle(f1, "Accelerate Rep Speed", function(val)
     states.accelReps = val
     local ult = player:FindFirstChild("ultimatesFolder") and player.ultimatesFolder:FindFirstChild("+5% Rep Speed")
@@ -904,8 +919,10 @@ local gpList = Instance.new("TextLabel", f4); gpList.Size = UDim2.new(1, -10, 0,
 ----------------------------------------------------------------
 local f5 = frames["Auto Gym"]
 
--- Map dropdown
+-- Ordering the dropdowns Map first, then Gym
 local mapDD
+local gymDD
+
 mapDD = createDropdown(f5, "Select Map", {"Tiny Island", "Beach", "Legend Beach", "Frozen Island", "Mystic Island", "Inferno Island", "Legend Island", "Muscle King Island", "Jungle Island"}, false, function(map)
     states.selectedMap = map
     states.selectedGym = nil
@@ -927,10 +944,8 @@ mapDD = createDropdown(f5, "Select Map", {"Tiny Island", "Beach", "Legend Beach"
     gymDD.setHeaderText("Select Gym v")
 end)
 
--- Gym dropdown
-local gymDD
 gymDD = createDropdown(f5, "Select Gym", {"Select map first"}, false, function(gymName)
-    if not states.selectedMap then return end
+    if not states.selectedMap or gymName == "Select map first" or gymName == "No gyms available" then return end
     -- Extract real gym name (strip cost)
     local realName = gymName:gsub(" %(.*%)", "")
     states.selectedGym = realName
@@ -951,6 +966,9 @@ gymBtn.MouseButton1Click:Connect(function()
     if states.selectedMap == "Muscle King Island" and not isLocalPlayerMuscleKing() then return end
     local chr = player.Character
     if not chr or not chr:FindFirstChild("HumanoidRootPart") then return end
+    local hum = chr:FindFirstChild("Humanoid")
+    if hum and hum.Sit then return end -- IGNORE TELEPORT IF SITTING
+    
     chr.HumanoidRootPart.CFrame = CFrame.new(gym.pos)
     chr.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
     fireEKey()
@@ -970,15 +988,12 @@ end)
 ----------------------------------------------------------------
 -- MAIN LOOPS
 ----------------------------------------------------------------
--- Position lock (respects Less Lag)
-table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
-    while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-        local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
-            local root = char.HumanoidRootPart
-            if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
-            elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
-        end
+-- Position lock / Auto Muscle King (Heartbeat based to prevent lag)
+table.insert(getgenv().ML_Expert_Loops, RunService.Heartbeat:Connect(function()
+    local char = player.Character; if char and char:FindFirstChild("HumanoidRootPart") then
+        local root = char.HumanoidRootPart
+        if states.autoMuscleKing then local mkPos = Vector3.new(-8761.708984, 494.232361, -5858.251953); if (root.Position - mkPos).Magnitude > 3 then root.CFrame = CFrame.new(mkPos); root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame
+        elseif states.lockedPos then if (root.Position - states.lockedPos.Position).Magnitude > 1.5 then root.CFrame = states.lockedPos; root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero end; states.lastSafePos = root.CFrame end
     end
 end))
 
@@ -1028,17 +1043,19 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- Weight Glue (respects Less Lag)
+-- Weight Glue Logic (Background Loop - Always active when holding Weight)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
-        if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
+        task.wait() -- No delay
         local char = player.Character
         if not char then continue end
         local tool = char:FindFirstChild("Weight")
         local rightHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+        
         if tool and rightHand then
             local handle = tool:FindFirstChild("Handle")
             if handle then
+                handle.Anchored = false
                 local glue = handle:FindFirstChild("WeightGlue")
                 if not glue then
                     pcall(function()
@@ -1051,12 +1068,16 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                 end
             end
         else
-            for _, t in ipairs(char:GetChildren()) do
-                if t:IsA("Tool") and t.Name == "Weight" then
-                    local h = t:FindFirstChild("Handle")
-                    if h then
-                        local g = h:FindFirstChild("WeightGlue")
-                        if g then g:Destroy() end
+            -- If not holding weight or not finding it in char, clean up glue if it somehow got stuck on a handle in backpack
+            local bp = player:FindFirstChild("Backpack")
+            if bp then
+                for _, t in ipairs(bp:GetChildren()) do
+                    if t:IsA("Tool") and t.Name == "Weight" then
+                        local h = t:FindFirstChild("Handle")
+                        if h then
+                            local g = h:FindFirstChild("WeightGlue")
+                            if g then g:Destroy() end
+                        end
                     end
                 end
             end
@@ -1064,42 +1085,52 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- Auto Equip (respects Less Lag, waits for full character)
+-- Auto Equip Tool (waits for backpack and character without breaking loop)
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
         if states.lessLag then task.wait(0.1) else RunService.Heartbeat:Wait() end
-        if not player:FindFirstChild("Backpack") then continue end
+        local bp = player:FindFirstChild("Backpack")
         local char = player.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then continue end
+        if not bp or not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
+            continue 
+        end
+        
         local hum = char.Humanoid
         local targetTool = nil
         if states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" then
-            targetTool = player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
+            targetTool = bp:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool)
         end
-        local weightTool = player.Backpack:FindFirstChild("Weight") or char:FindFirstChild("Weight")
-
+        
+        -- Logic: If we are meant to auto-equip
         if states.autoEquip then
             if targetTool then
                 if targetTool.Parent ~= char then 
                     pcall(function() if hum then hum:EquipTool(targetTool) else targetTool.Parent = char end end)
                 end
-                if weightTool and weightTool.Parent == char then
-                    pcall(function() weightTool.Parent = player.Backpack end)
-                end
-            elseif weightTool then
-                if weightTool.Parent ~= char then 
+            else
+                -- If the target tool we want isn't found, default to Weight if we have it
+                local weightTool = bp:FindFirstChild("Weight") or char:FindFirstChild("Weight")
+                if weightTool and weightTool.Parent ~= char then
                     pcall(function() if hum then hum:EquipTool(weightTool) else weightTool.Parent = char end end)
                 end
             end
-        end
-        
-        if states.autoEquip or states.autoGlitch then
+            
+            -- If Auto Equip is ON, unequip everything else except what we want to hold AND Punch
             if not states.autoGlitchTrain then
-                local targetToolExists = states.selectedTool and states.selectedTool ~= "NO TOOL FOUND" and (player.Backpack:FindFirstChild(states.selectedTool) or char:FindFirstChild(states.selectedTool))
-                local expectedTool = targetToolExists and states.selectedTool or "Weight"
+                local currentDesired = (targetTool and targetTool.Name) or "Weight"
                 for _, t in ipairs(char:GetChildren()) do
-                    if t:IsA("Tool") and t.Name ~= expectedTool and t.Name ~= "Punch" then
-                        pcall(function() t.Parent = player.Backpack end)
+                    if t:IsA("Tool") and t.Name ~= currentDesired and t.Name ~= "Punch" then
+                        pcall(function() t.Parent = bp end)
+                    end
+                end
+            end
+            
+        -- Logic: If Auto Equip is OFF
+        else
+            if not states.autoGlitchTrain then
+                for _, t in ipairs(char:GetChildren()) do
+                    if t:IsA("Tool") and t.Name ~= "Punch" then
+                        pcall(function() t.Parent = bp end)
                     end
                 end
             end
@@ -1119,22 +1150,26 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                     pcall(function()
                         t.CanBeDropped = false; 
                         if not allowedTools[t.Name] then 
-                            t.Parent = player.Backpack 
+                            local bp = player:FindFirstChild("Backpack")
+                            if bp then t.Parent = bp end
                         end 
                     end)
                 end 
             end 
         end;
-        for _, t in ipairs(player.Backpack:GetChildren()) do 
-            if t:IsA("Tool") then 
-                pcall(function() t.CanBeDropped = false end)
+        local bp = player:FindFirstChild("Backpack")
+        if bp then
+            for _, t in ipairs(bp:GetChildren()) do 
+                if t:IsA("Tool") then 
+                    pcall(function() t.CanBeDropped = false end)
+                end 
             end 
-        end 
+        end
     end
 end))
 
 -- ================================
--- DEDICATED AUTO GLITCH LOOP (ALWAYS task.wait() – NO HEARTBEAT, NO LESS LAG)
+-- DEDICATED AUTO GLITCH LOOP (ALWAYS task.wait() – NO DELAY)
 -- ================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
@@ -1151,7 +1186,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
         local actualRockPart = rockModel:FindFirstChild("Rock") or rockModel:FindFirstChildWhichIsA("BasePart")
         if not actualRockPart then continue end
 
-        local punchTool = player.Backpack:FindFirstChild("Punch") or char:FindFirstChild("Punch")
+        local punchTool = getPunch()
         if punchTool and punchTool.Parent ~= char then 
             pcall(function() punchTool.Parent = char end)
         end
@@ -1167,20 +1202,15 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             local targetHand = char:FindFirstChild(handPrefix .. "Hand") or char:FindFirstChild(handPrefix .. " Arm")
             toggleHand = not toggleHand
             if targetHand then 
-                local origPos = actualRockPart:FindFirstChild("originalPosition")
                 if not rockCache[actualRockPart] then 
-                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame, OrigPos = origPos and origPos.Value or nil} 
+                    rockCache[actualRockPart] = {Size = actualRockPart.Size, CanCollide = actualRockPart.CanCollide, CFrame = actualRockPart.CFrame} 
                 end
                 local mySize = player:FindFirstChild("customSize") and player.customSize.Value or tonumber(Config.SizeValue) or 1
                 local newSize = (mySize >= 2) and 2 or 1
                 actualRockPart.Size = Vector3.new(newSize, newSize, newSize)
                 actualRockPart.CanCollide = false
                 actualRockPart.CFrame = targetHand.CFrame
-                if origPos and origPos:IsA("Vector3Value") then
-                    if (origPos.Value - targetHand.Position).Magnitude > 0.1 then
-                        origPos.Value = targetHand.Position
-                    end
-                end
+                -- NonTeleport no longer edits the originalPosition value
             end
             pcall(function()
                 local args1 = { [1] = "punch", [2] = "leftHand" }
@@ -1190,11 +1220,14 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
             end)
         end
 
-        -- Auto Glitch While Training: does NOT activate tools, just prevents unequipping
+        -- If Auto Glitch Train is OFF, stop and unequip other tools (keep Punch)
         if not states.autoGlitchTrain then 
             for _, tool in ipairs(char:GetChildren()) do 
                 if tool:IsA("Tool") and tool.Name ~= "Punch" then 
-                    pcall(function() tool.Parent = player.Backpack end)
+                    local bp = player:FindFirstChild("Backpack")
+                    if bp then
+                        pcall(function() tool.Parent = bp end)
+                    end
                 end 
             end
         end
@@ -1202,7 +1235,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 end))
 
 -- ================================
--- KILL LOGIC (respects Less Lag) – ONLY TELEPORT TORSO
+-- KILL LOGIC (respects Less Lag) – ALL EXCEPT HANDS
 -- ================================
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while true do
@@ -1213,8 +1246,8 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
 
         local anyKillActive = states.killActive or states.killEveryone or states.autoGoodKarma or states.autoEvilKarma
         if anyKillActive then
-            local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
-            if hand then 
+            local myHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+            if myHand then 
                 for _, p in ipairs(Players:GetPlayers()) do 
                     if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                         local shouldKill = false
@@ -1225,16 +1258,17 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
                         end
                         
                         if shouldKill and not states.whitelist[p.Name] then 
-                            -- Only teleport torso (R15 UpperTorso, fallback to Torso)
-                            local torso = p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("Torso")
-                            if torso and torso:IsA("BasePart") then
-                                pcall(function()
-                                    torso.CFrame = hand.CFrame * CFrame.new(0, 0, -3)
-                                    torso.AssemblyLinearVelocity = Vector3.zero
-                                    torso.AssemblyAngularVelocity = Vector3.zero
-                                end)
+                            for _, part in ipairs(p.Character:GetDescendants()) do
+                                -- Teleport all BaseParts except Hands/Arms
+                                if part:IsA("BasePart") and not string.match(part.Name:lower(), "hand") and not string.match(part.Name:lower(), "arm") then
+                                    pcall(function()
+                                        part.CFrame = myHand.CFrame * CFrame.new(0, 0, -3)
+                                        part.AssemblyLinearVelocity = Vector3.zero
+                                        part.AssemblyAngularVelocity = Vector3.zero
+                                    end)
+                                end
                             end
-                            local punchTool = char:FindFirstChild("Punch") or player.Backpack:FindFirstChild("Punch")
+                            local punchTool = getPunch()
                             if punchTool then pcall(function() punchTool:Activate() end) end
                         end
                     end
@@ -1387,7 +1421,7 @@ table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     end
 end))
 
--- Anti-AFK
+-- 10-MINUTE ANTI-AFK (RIGHT CLICK) - RESTORED
 table.insert(getgenv().ML_Expert_Loops, task.spawn(function()
     while task.wait(600) do
         pcall(function()
